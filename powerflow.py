@@ -265,13 +265,15 @@ class PowerFlowNetwork:
         plt.ylabel("Absolute Delta")
         plt.legend()
 
-
     def plot_voltages(self, pu=True, minimum_voltage_pu=0.97):
         plt.figure()
         voltages_pu = np.abs(self.V)
-        x_axis = range(0, voltages_pu.size)
+        x_axis = list(range(1, voltages_pu.size + 1))
         plt.scatter(x_axis, voltages_pu, label="Voltage In Node")
         plt.title("Network Voltage Distribution")
+        for idx, _ in enumerate(voltages_pu):
+            plt.annotate(idx+1, (x_axis[idx], voltages_pu[idx]))
+        plt.grid(visible=True, which="both", axis="y")
         plt.xlabel("Bus [#]")
         plt.ylabel("Voltage [pu]")
         plt.axhline(y=minimum_voltage_pu, color='r', linestyle='-')
