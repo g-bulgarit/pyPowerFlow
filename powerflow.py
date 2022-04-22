@@ -114,6 +114,7 @@ class PowerFlowNetwork:
             self.Q_max[n] = self.bus_data[k, 9]
             self.Q_shunt[n] = self.bus_data[k, 10]
 
+            # Create initial guess for voltages - set all voltages to 1.0 p.u
             if self.Vm[n] <= 0:
                 self.Vm[n] = 1
                 self.V[n] = 1 + 0j
@@ -265,17 +266,28 @@ class PowerFlowNetwork:
         plt.ylabel("Absolute Delta")
         plt.legend()
 
-    def plot_voltages(self, pu=True, minimum_voltage_pu=0.97):
+    def plot_voltages(self, pu=True, minimum_voltage=0.97):
         plt.figure()
         voltages_pu = np.abs(self.V)
+        plt.ylabel("Voltage [pu]")
+
+        if not pu:
+            voltages_pu = np.real(self.V) * self.basePower
+            plt.ylabel("Voltage [V]")
+
         x_axis = list(range(1, voltages_pu.size + 1))
-        plt.scatter(x_axis, voltages_pu, label="Voltage In Node")
         plt.title("Network Voltage Distribution")
         for idx, _ in enumerate(voltages_pu):
+            if voltages_pu[idx] < minimum_voltage:
+                color = "r"
+            else:
+                color = "b"
+            plt.scatter(x_axis[idx], voltages_pu[idx], color=color)
             plt.annotate(idx+1, (x_axis[idx], voltages_pu[idx]))
         plt.grid(visible=True, which="both", axis="y")
-        plt.xlabel("Bus [#]")
-        plt.ylabel("Voltage [pu]")
-        plt.axhline(y=minimum_voltage_pu, color='r', linestyle='-')
+        plt.minorticks_on()
+        plt.xlabel("Bus Number [#]")
+
+        plt.axhline(y=minimum_voltage, color='r', linestyle='-')
         plt.legend()
 
