@@ -83,7 +83,7 @@ class PowerFlowNetwork:
 
         # Assign values in the admittance matrix that are not on the diagonal:
         for k in range(0, int(self.nbr)):
-            ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] -\
+            ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] - \
                                                              self.y[k]/self.a[k]
             ybus[int(self.nr[k]) - 1, int(self.nl[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1]
 
@@ -288,6 +288,6 @@ class PowerFlowNetwork:
         plt.minorticks_on()
         plt.xlabel("Bus Number [#]")
 
-        plt.axhline(y=minimum_voltage, color='r', linestyle='-')
+        plt.axhline(y=minimum_voltage, color='r', linestyle='--')
         plt.legend()
 
