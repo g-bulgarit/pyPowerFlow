@@ -1,4 +1,5 @@
 import numpy as np
+from matplotlib import pyplot as plt
 
 
 class PowerFlowNetwork:
@@ -34,6 +35,7 @@ class PowerFlowNetwork:
         self.ybus = self.calculate_admittance_matrix()
 
         # Initialize output parameters
+        self.convergenceDeltas = []
         self.V = np.zeros(int(self.nbus), dtype=np.complex128)
         self.P = np.zeros(int(self.nbus))
         self.Q = np.zeros(int(self.nbus))
@@ -48,10 +50,19 @@ class PowerFlowNetwork:
         self.Q_min = np.zeros(int(self.nbus))
         self.Q_max = np.zeros(int(self.nbus))
         self.Q_shunt = np.zeros(int(self.nbus))
+        self.Pgg = np.zeros(int(self.nbus))
+        self.Qgg = np.zeros(int(self.nbus))
         self.ngs = np.zeros(int(self.nbus))
         self.nss = np.zeros(int(self.nbus))
         self.ns = 0
         self.ng = 0
+        self.delta_degrees = np.zeros(int(self.nbus))
+        self.y_load = np.zeros(int(self.nbus), dtype=np.complex128)
+        self.Pg_total = 0
+        self.Qg_total = 0
+        self.Pd_total = 0
+        self.Qd_total = 0
+        self.Q_shunt_total = 0
 
         # Solve:
         self.newton_raphson_solver()
@@ -207,11 +218,49 @@ class PowerFlowNetwork:
             # Solve with least-squares
             dx_vec = np.linalg.lstsq(jacobian_matrix, dc_vec.T, rcond=None)[0]
 
-            pass
+            for n in range(0, int(self.nbus)):
+                nn = int(n - self.nss[n])
+                lm = int(self.nbus + n - self.ngs[n] - self.nss[n] - self.ns)
+                if self.kb[n] != 1:
+                    self.delta[n] += dx_vec[nn]
+                if self.kb[n] == 0:
+                    self.Vm[n] += dx_vec[lm]
 
+            max_error = np.max(np.abs(dc_vec))
+            self.convergenceDeltas.append(max_error)
 
+            # Check if we are diverging beyond the allowed limit:
+            if iteration == self.maximumIterations and max_error > self.accuracy:
+                print(f"Solution did not converge after {iteration} iterations...")
+                converge = 0
 
+        if converge == 1:
+            print(f"Solution converged after {iteration} iterations!")
+            self.V = self.Vm * np.cos(self.delta) + 1j * self.Vm * np.sin(self.delta)
+            self.delta_degrees = (180 / np.pi) * self.delta
 
+            k = 0
+            for n in range(0, int(self.nbus)):
+                if self.kb[n] == 1:
+                    k += 1
+                    self.S[n] = self.P[n] + 1j * self.Q[n]
+                    self.Pg[n] = self.P[n] * self.basePower + self.Pd[n]
+                    self.Qg[n] = self.Q[n] * self.basePower + self.Qd[n] - self.Q_shunt[n]
+                    self.Pgg[k] = self.Pg[n]
+                    self.Qgg[k] = self.Qg[n]
+                self.y_load[n] = (self.Pd[n] - (1j * self.Qd[n]) + (1j * self.Q_shunt[n])) / (self.basePower * (self.Vm[n] ** 2))
+            self.bus_data[:, 2] = self.Vm.T
+            self.bus_data[:, 3] = self.delta_degrees.T
+            self.Pg_total = np.sum(self.Pg)
+            self.Qg_total = np.sum(self.Qg)
+            self.Pd_total = np.sum(self.Pd)
+            self.Qd_total = np.sum(self.Qd)
+            self.Q_shunt_total = np.sum(self.Q_shunt)
 
-
-        pass
+    def plot_convergence_graph(self):
+        plt.plot(self.convergenceDeltas, label="Delta")
+        plt.title("Delta between iterations as a function of iterations")
+        plt.xlabel("Iteration Number [#]")
+        plt.ylabel("Absolute Delta")
+        plt.legend()
+        plt.show()

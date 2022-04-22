@@ -89,3 +89,4 @@ if __name__ == '__main__':
 
     # Get solved PF network:
     pf = PowerFlowNetwork(bus_params, line_params, base_power_reference, accuracy, max_iterations)
+    pf.plot_convergence_graph()
