@@ -108,7 +108,7 @@ class PowerFlowNetwork:
                 self.V[n] = 1 + 0j
 
             else:
-                self.delta[n] = (np.pi / 180) * self.delta[n];
+                self.delta[n] = (np.pi / 180) * self.delta[n]
                 self.V[n] = self.Vm[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
                 self.P[n] = (self.Pg[n] - self.Pd[n]) / self.basePower
                 self.Q[n] = (self.Qg[n] - self.Qd[n] + self.Q_shunt[n]) / self.basePower
@@ -150,7 +150,7 @@ class PowerFlowNetwork:
                 j33 = 0
                 j44 = 0
 
-                for i in range(0, int(self.nbr) - 1):  # check -1 here
+                for i in range(0, int(self.nbr)):  # check -1 here
                     if (self.nl[i] - 1) == n or (self.nr[i] - 1) == n:
                         if (self.nl[i] - 1) == n:
                             l = int(self.nr[i]) - 1
@@ -186,7 +186,7 @@ class PowerFlowNetwork:
                 if self.kb[n] == 2:
                     self.Q[n] = Qk
                     if self.Q_max[n] != 0:
-                        Qgc = self.Q[n] * self.basePower + self.Qd[n] - self.Q_shunt[n]
+                        Qgc = (self.Q[n] * self.basePower) + self.Qd[n] - self.Q_shunt[n]
                         if iteration <= 7:
                             if iteration > 2:
                                 if Qgc < self.Q_min[n]:
@@ -198,16 +198,15 @@ class PowerFlowNetwork:
                     jacobian_matrix[nn, nn] = j11
                     dc_vec[nn] = self.P[n] - Pk
 
-                if self.kb[n] == 0:
-                    jacobian_matrix[nn, lm] = 2 * self.Vm[n] * Ym[n, n] * np.cos(t[n, n]) + j22
+                if int(self.kb[n]) == 0:
+                    jacobian_matrix[nn, lm] = (2 * self.Vm[n] * Ym[n, n] * np.cos(t[n, n])) + j22
                     jacobian_matrix[lm, nn] = j33
-                    jacobian_matrix[lm, lm] = -2 * self.Vm[n] * Ym[n, n] * np.sin(t[n, n]) - j44
+                    jacobian_matrix[lm, lm] = (-2 * self.Vm[n] * Ym[n, n] * np.sin(t[n, n])) - j44
                     dc_vec[lm] = self.Q[n] - Qk
 
-            dx_vec = np.linalg.lstsq(jacobian_matrix, dc_vec.T, rcond=-1)[0]
-            dx_vec2 = np.linalg.lstsq(jacobian_matrix, dc_vec, rcond=-1)[0]
-            dx_vec3 = np.linalg.lstsq(jacobian_matrix.T, dc_vec, rcond=-1)[0]
-            dx_vec4 = np.linalg.lstsq(jacobian_matrix.T, dc_vec.T, rcond=-1)[0]
+            # Solve with least-squares
+            dx_vec = np.linalg.lstsq(jacobian_matrix, dc_vec.T, rcond=None)[0]
+
             pass
 
 
