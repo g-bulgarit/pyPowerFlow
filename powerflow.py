@@ -258,9 +258,22 @@ class PowerFlowNetwork:
             self.Q_shunt_total = np.sum(self.Q_shunt)
 
     def plot_convergence_graph(self):
+        plt.figure()
         plt.plot(self.convergenceDeltas, label="Delta")
         plt.title("Delta between iterations as a function of iterations")
         plt.xlabel("Iteration Number [#]")
         plt.ylabel("Absolute Delta")
         plt.legend()
-        plt.show()
+
+
+    def plot_voltages(self, pu=True, minimum_voltage_pu=0.97):
+        plt.figure()
+        voltages_pu = np.abs(self.V)
+        x_axis = range(0, voltages_pu.size)
+        plt.scatter(x_axis, voltages_pu, label="Voltage In Node")
+        plt.title("Network Voltage Distribution")
+        plt.xlabel("Bus [#]")
+        plt.ylabel("Voltage [pu]")
+        plt.axhline(y=minimum_voltage_pu, color='r', linestyle='-')
+        plt.legend()
+
