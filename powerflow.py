@@ -34,10 +34,10 @@ class PowerFlowNetwork:
         self.ybus = self.calculate_admittance_matrix()
 
         # Initialize output parameters
-        self.V = np.zeros(int(self.nbus))
+        self.V = np.zeros(int(self.nbus), dtype=np.complex128)
         self.P = np.zeros(int(self.nbus))
         self.Q = np.zeros(int(self.nbus))
-        self.S = np.zeros(int(self.nbus))
+        self.S = np.zeros(int(self.nbus), dtype=np.complex128)
         self.kb = np.zeros(int(self.nbus))
         self.Vm = np.zeros(int(self.nbus))
         self.delta = np.zeros(int(self.nbus))
@@ -48,6 +48,10 @@ class PowerFlowNetwork:
         self.Q_min = np.zeros(int(self.nbus))
         self.Q_max = np.zeros(int(self.nbus))
         self.Q_shunt = np.zeros(int(self.nbus))
+        self.ngs = np.zeros(int(self.nbus))
+        self.nss = np.zeros(int(self.nbus))
+        self.ns = 0
+        self.ng = 0
 
         # Solve:
         self.newton_raphson_solver()
@@ -107,7 +111,108 @@ class PowerFlowNetwork:
                 self.delta[n] = (np.pi / 180) * self.delta[n];
                 self.V[n] = self.Vm[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
                 self.P[n] = (self.Pg[n] - self.Pd[n]) / self.basePower
-                self.P[n] = (self.Qg[n] - self.Qd[n] + self.Q_shunt[n]) / self.basePower
+                self.Q[n] = (self.Qg[n] - self.Qd[n] + self.Q_shunt[n]) / self.basePower
                 self.S[n] = self.P[n] + 1j * self.Q[n]
+
+        # Do something
+        for k in range(0, int(self.nbus)):
+            if self.kb[k] == 1:
+                self.ns += 1
+            if self.kb[k] == 2:
+                self.ng += 1
+
+            self.ngs[k] = self.ng
+            self.nss[k] = self.ns
+
+        # Convert to a phasor-vector, separated to two vectors, one for magnitude and one for phase
+        Ym = np.abs(self.ybus)
+        t = np.angle(self.ybus)
+        m = int(2 * self.nbus - self.ng - (2 * self.ns))
+        max_error = 1
+        converge = 1
+        iteration = 0
+
+        # Start iterating over solution
+        while max_error >= self.accuracy and iteration <= self.maximumIterations:
+            jacobian_matrix = np.zeros((m, m))
+            dc_vec = np.zeros(m)
+
+            iteration += 1  # increment iteration
+
+            # Start calculation
+            for n in range(0, int(self.nbus)):
+                nn = int(n - self.nss[n])
+                lm = int(self.nbus + n - self.ngs[n] - self.nss[n] - self.ns)
+
+                # Jacobian elements:
+                j11 = 0
+                j22 = 0
+                j33 = 0
+                j44 = 0
+
+                for i in range(0, int(self.nbr) - 1):  # check -1 here
+                    if (self.nl[i] - 1) == n or (self.nr[i] - 1) == n:
+                        if (self.nl[i] - 1) == n:
+                            l = int(self.nr[i]) - 1
+                        if (self.nr[i] - 1) == n:
+                            l = int(self.nl[i]) - 1
+                        j11 += self.Vm[n] * self.Vm[l] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+                        j33 += self.Vm[n] * self.Vm[l] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+
+                        if self.kb[n] != 1:
+                            j22 += self.Vm[l] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                            j44 += self.Vm[l] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+
+                        if self.kb[n] != 1 and self.kb[l] != 1:
+                            lk = int(self.nbus + l - self.ngs[l] - self.nss[l] - self.ns)
+                            ll = int(l - self.nss[l])
+                            # Calculate the elements off of the diagonal:
+                            jacobian_matrix[nn, ll] = -1 * self.Vm[n] * self.Vm[l] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+                            if self.kb[l] == 0:
+                                jacobian_matrix[nn, lk] = self.Vm[n] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                            if self.kb[n] == 0:
+                                jacobian_matrix[lm, ll] = -1 * self.Vm[n] * self.Vm[l] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                            if self.kb[n] == 0 and self.kb[l] == 0:
+                                jacobian_matrix[lm, lk] = -1 * self.Vm[n] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+
+                Pk = (self.Vm[n] ** 2) * Ym[n, n] * np.cos(t[n, n]) + j33
+                Qk = -1 * (self.Vm[n] ** 2) * Ym[n, n] * np.sin(t[n, n]) - j11
+
+                # Handle the swing bus
+                if self.kb[n] == 1:
+                    self.P[n] = Pk
+                    self.Q[n] = Qk
+
+                if self.kb[n] == 2:
+                    self.Q[n] = Qk
+                    if self.Q_max[n] != 0:
+                        Qgc = self.Q[n] * self.basePower + self.Qd[n] - self.Q_shunt[n]
+                        if iteration <= 7:
+                            if iteration > 2:
+                                if Qgc < self.Q_min[n]:
+                                    self.Vm[n] += 0.01
+                                elif Qgc > self.Q_max[n]:
+                                    self.Vm[n] -= 0.01
+
+                if int(self.kb[n]) != 1:
+                    jacobian_matrix[nn, nn] = j11
+                    dc_vec[nn] = self.P[n] - Pk
+
+                if self.kb[n] == 0:
+                    jacobian_matrix[nn, lm] = 2 * self.Vm[n] * Ym[n, n] * np.cos(t[n, n]) + j22
+                    jacobian_matrix[lm, nn] = j33
+                    jacobian_matrix[lm, lm] = -2 * self.Vm[n] * Ym[n, n] * np.sin(t[n, n]) - j44
+                    dc_vec[lm] = self.Q[n] - Qk
+
+            dx_vec = np.linalg.lstsq(jacobian_matrix, dc_vec.T, rcond=-1)[0]
+            dx_vec2 = np.linalg.lstsq(jacobian_matrix, dc_vec, rcond=-1)[0]
+            dx_vec3 = np.linalg.lstsq(jacobian_matrix.T, dc_vec, rcond=-1)[0]
+            dx_vec4 = np.linalg.lstsq(jacobian_matrix.T, dc_vec.T, rcond=-1)[0]
+            pass
+
+
+
+
+
 
         pass
