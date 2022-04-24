@@ -1,5 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
+import csv
 
 
 class PowerFlowNetwork:
@@ -66,6 +67,7 @@ class PowerFlowNetwork:
 
         # Solve:
         self.newton_raphson_solver()
+        self.calculate_line_flow()
 
     def calculate_admittance_matrix(self) -> np.ndarray:
         """
@@ -258,6 +260,53 @@ class PowerFlowNetwork:
             self.Qd_total = np.sum(self.Qd)
             self.Q_shunt_total = np.sum(self.Q_shunt)
 
+    def calculate_line_flow(self):
+        slt = 0
+        outlines = ["From, To, MW, MVAR, MVA, MW Loss, MVAR Loss, Tap\n"]
+
+        for n in range(0, int(self.nbus)):
+            bus_body = 0
+            for l in range(0, int(self.nbr)):
+                k = 0
+                if not bus_body:
+                    # Print header:
+                    outlines.append(f"{n + 1}, , {self.P[n] * self.basePower:.3f}, {self.Q[n] * self.basePower:.3f},"
+                                    f" {np.abs(self.S[n] * self.basePower):.3f}\n")
+                    bus_body = 1
+
+                if self.nl[l] - 1 == n:
+                    k = int(self.nr[l]) - 1
+                    i_n = (self.V[n] - self.a[l] * self.V[k]) * self.y[l] / (self.a[l] ** 2) + \
+                        self.B_c[l] / (self.a[l] ** 2) * self.V[n]
+                    i_k = (self.V[k] - self.V[n] / self.a[l]) * self.y[l] + self.B_c[l] * self.V[k]
+                    s_nk = self.V[n] * np.conj(i_n) * self.basePower
+                    s_kn = self.V[k] * np.conj(i_k) * self.basePower
+                    sl = s_nk + s_kn
+                    slt += s_nk + s_kn
+
+                elif self.nr[l] - 1 == n:
+                    k = int(self.nl[l]) - 1
+                    i_n = (self.V[n] - self.V[k] / self.a[l] ) * self.y[l] + \
+                          self.B_c[l] * self.V[n]
+                    i_k = (self.V[k] - self.a[l] * self.V[n]) * self.y[l] / (self.a[l] ** 2) + \
+                          self.B_c[l] / (self.a[l] ** 2) * self.V[k]
+                    s_nk = self.V[n] * np.conj(i_n) * self.basePower
+                    s_kn = self.V[k] * np.conj(i_k) * self.basePower
+                    sl = s_nk + s_kn
+                    slt += s_nk + s_kn
+
+                if self.nl[l] - 1 == n or self.nr[l] - 1 == n:
+                    out_str = f" , {k + 1}, {np.real(s_nk):.3f}, {np.imag(s_nk):.3f}," \
+                              f" {np.abs(s_nk):.3f}, {np.real(sl):.3f}, "
+                    if self.nl[l] - 1 == n and self.a[l] != 1:
+                        out_str += f"{np.imag(sl):.3f}, {self.a[l]:.3f}\n"
+                    else:
+                        out_str += f"{np.imag(sl):.3f}, ,\n"
+                    outlines.append(out_str)
+
+                with open("line_outputs.csv", "w+") as csv_out:
+                    csv_out.writelines(outlines)
+
     def plot_convergence_graph(self):
         plt.figure()
         plt.plot(self.convergenceDeltas, label="Delta")
@@ -287,7 +336,25 @@ class PowerFlowNetwork:
         plt.grid(visible=True, which="both", axis="y")
         plt.minorticks_on()
         plt.xlabel("Bus Number [#]")
-
         plt.axhline(y=minimum_voltage, color='r', linestyle='--')
-        plt.legend()
+
+    def export_bus_data(self, printout=True):
+        outlines = ["Bus #, Voltage, Angle, Load MW, Load MVAR, Generator MW, Generator MVAR, Injected MVAR\n"]
+        for i in range(int(self.nbus)):
+            outlines.append(f"{i}, {self.Vm[i]:.3f}, {self.delta_degrees[i]:.3f}, "
+                            f"{self.Pd[i]:.3f}, {self.Qd[i]:.3f}, {self.Pg[i]:.3f},"
+                            f"{self.Qg[i]:.3f}, {self.Q_shunt[i]:.3f}\n")
+
+        with open("bus_outputs.csv", "w+") as csvfile:
+            csvfile.writelines(outlines)
+
+        if printout:
+            [print(line) for line in outlines]
+            print(f"Bus Totals:\n"
+                  f"Total Dispersed Power: {self.Pd_total:.3f}[MW], {self.Qd_total:.3f}[MVAR]\n"
+                  f"Total Generated Power: {self.Pg_total:.3f}[MW], {self.Qg_total:.3f}[MVAR],"
+                  f"With Capacitors:{self.Q_shunt_total:.3f}[MVAR]")
+
+
+
 

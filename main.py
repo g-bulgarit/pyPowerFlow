@@ -84,13 +84,14 @@ line_params = np.asarray([
 
 if __name__ == '__main__':
     base_power_reference = 100  # MVA
-    accuracy = 1e-5  # delta
+    accuracy = 1e-8  # delta
     max_iterations = 200
 
     # Get solved PF network:
     pf = PowerFlowNetwork(bus_params, line_params, base_power_reference, accuracy, max_iterations)
+    pf.export_bus_data(printout=True)
 
     # Plot stuff
     pf.plot_convergence_graph()
-    pf.plot_voltages(minimum_voltage_pu=0.99)
+    pf.plot_voltages(pu=False, minimum_voltage=99)
     plt.show()
