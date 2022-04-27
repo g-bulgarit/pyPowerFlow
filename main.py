@@ -94,5 +94,5 @@ if __name__ == '__main__':
     # Plot stuff
     pf.plot_convergence_graph()
     pf.plot_voltages(pu=False, minimum_voltage=99)
-    pf.plot_network_graph(minimum_voltage_pu=1.02)
+    pf.plot_network_graph(minimum_voltage_pu=1.02, label_edges=True)
     plt.show()

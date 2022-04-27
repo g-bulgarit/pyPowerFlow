@@ -65,6 +65,7 @@ class PowerFlowNetwork:
         self.Pd_total = 0
         self.Qd_total = 0
         self.Q_shunt_total = 0
+        self.linepq = dict()
 
         # Solve:
         self.newton_raphson_solver()
@@ -87,14 +88,14 @@ class PowerFlowNetwork:
         # Assign values in the admittance matrix that are not on the diagonal:
         for k in range(0, int(self.nbr)):
             ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] - \
-                                                             self.y[k]/self.a[k]
+                                                             self.y[k] / self.a[k]
             ybus[int(self.nr[k]) - 1, int(self.nl[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1]
 
         # Assign values in the admittance matrix that are on the diagonal
         for n in range(0, int(self.nbus)):
             for k in range(0, int(self.nbr)):
                 if (self.nl[k] - 1) == n:
-                    ybus[n, n] = ybus[n, n] + self.B_c[k] + self.y[k]/((self.a[k]) ** 2)
+                    ybus[n, n] = ybus[n, n] + self.B_c[k] + self.y[k] / ((self.a[k]) ** 2)
                 elif (self.nr[k] - 1) == n:
                     ybus[n, n] = ybus[n, n] + self.y[k] + self.B_c[k]
                 else:
@@ -140,7 +141,7 @@ class PowerFlowNetwork:
             self.nss[k] = self.ns
 
         # Convert to a phasor-vector, separated to two vectors, one for magnitude and one for phase
-        Ym = np.abs(self.ybus)
+        ym = np.abs(self.ybus)
         t = np.angle(self.ybus)
         m = int(2 * self.nbus - self.ng - (2 * self.ns))
         max_error = 1
@@ -171,27 +172,31 @@ class PowerFlowNetwork:
                             l = int(self.nr[i]) - 1
                         if (self.nr[i] - 1) == n:
                             l = int(self.nl[i]) - 1
-                        j11 += self.Vm[n] * self.Vm[l] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
-                        j33 += self.Vm[n] * self.Vm[l] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                        j11 += self.Vm[n] * self.Vm[l] * ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+                        j33 += self.Vm[n] * self.Vm[l] * ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
 
                         if self.kb[n] != 1:
-                            j22 += self.Vm[l] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
-                            j44 += self.Vm[l] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+                            j22 += self.Vm[l] * ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                            j44 += self.Vm[l] * ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
 
                         if self.kb[n] != 1 and self.kb[l] != 1:
                             lk = int(self.nbus + l - self.ngs[l] - self.nss[l] - self.ns)
                             ll = int(l - self.nss[l])
                             # Calculate the elements off of the diagonal:
-                            jacobian_matrix[nn, ll] = -1 * self.Vm[n] * self.Vm[l] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+                            jacobian_matrix[nn, ll] = -1 * self.Vm[n] * self.Vm[l] * ym[n, l] * np.sin(
+                                t[n, l] - self.delta[n] + self.delta[l])
                             if self.kb[l] == 0:
-                                jacobian_matrix[nn, lk] = self.Vm[n] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                                jacobian_matrix[nn, lk] = self.Vm[n] * ym[n, l] * np.cos(
+                                    t[n, l] - self.delta[n] + self.delta[l])
                             if self.kb[n] == 0:
-                                jacobian_matrix[lm, ll] = -1 * self.Vm[n] * self.Vm[l] * Ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                                jacobian_matrix[lm, ll] = -1 * self.Vm[n] * self.Vm[l] * ym[n, l] * np.cos(
+                                    t[n, l] - self.delta[n] + self.delta[l])
                             if self.kb[n] == 0 and self.kb[l] == 0:
-                                jacobian_matrix[lm, lk] = -1 * self.Vm[n] * Ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+                                jacobian_matrix[lm, lk] = -1 * self.Vm[n] * ym[n, l] * np.sin(
+                                    t[n, l] - self.delta[n] + self.delta[l])
 
-                Pk = (self.Vm[n] ** 2) * Ym[n, n] * np.cos(t[n, n]) + j33
-                Qk = -1 * (self.Vm[n] ** 2) * Ym[n, n] * np.sin(t[n, n]) - j11
+                Pk = (self.Vm[n] ** 2) * ym[n, n] * np.cos(t[n, n]) + j33
+                Qk = -1 * (self.Vm[n] ** 2) * ym[n, n] * np.sin(t[n, n]) - j11
 
                 # Handle the swing bus
                 if self.kb[n] == 1:
@@ -214,9 +219,9 @@ class PowerFlowNetwork:
                     dc_vec[nn] = self.P[n] - Pk
 
                 if int(self.kb[n]) == 0:
-                    jacobian_matrix[nn, lm] = (2 * self.Vm[n] * Ym[n, n] * np.cos(t[n, n])) + j22
+                    jacobian_matrix[nn, lm] = (2 * self.Vm[n] * ym[n, n] * np.cos(t[n, n])) + j22
                     jacobian_matrix[lm, nn] = j33
-                    jacobian_matrix[lm, lm] = (-2 * self.Vm[n] * Ym[n, n] * np.sin(t[n, n])) - j44
+                    jacobian_matrix[lm, lm] = (-2 * self.Vm[n] * ym[n, n] * np.sin(t[n, n])) - j44
                     dc_vec[lm] = self.Q[n] - Qk
 
             # Solve with least-squares
@@ -252,7 +257,8 @@ class PowerFlowNetwork:
                     self.Qg[n] = self.Q[n] * self.basePower + self.Qd[n] - self.Q_shunt[n]
                     self.Pgg[k] = self.Pg[n]
                     self.Qgg[k] = self.Qg[n]
-                self.y_load[n] = (self.Pd[n] - (1j * self.Qd[n]) + (1j * self.Q_shunt[n])) / (self.basePower * (self.Vm[n] ** 2))
+                self.y_load[n] = (self.Pd[n] - (1j * self.Qd[n]) + (1j * self.Q_shunt[n])) / (
+                        self.basePower * (self.Vm[n] ** 2))
             self.bus_data[:, 2] = self.Vm.T
             self.bus_data[:, 3] = self.delta_degrees.T
             self.Pg_total = np.sum(self.Pg)
@@ -287,10 +293,10 @@ class PowerFlowNetwork:
 
                 elif self.nr[l] - 1 == n:
                     k = int(self.nl[l]) - 1
-                    i_n = (self.V[n] - self.V[k] / self.a[l] ) * self.y[l] + \
-                          self.B_c[l] * self.V[n]
+                    i_n = (self.V[n] - self.V[k] / self.a[l]) * self.y[l] + \
+                        self.B_c[l] * self.V[n]
                     i_k = (self.V[k] - self.a[l] * self.V[n]) * self.y[l] / (self.a[l] ** 2) + \
-                          self.B_c[l] / (self.a[l] ** 2) * self.V[k]
+                        self.B_c[l] / (self.a[l] ** 2) * self.V[k]
                     s_nk = self.V[n] * np.conj(i_n) * self.basePower
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
@@ -304,16 +310,17 @@ class PowerFlowNetwork:
                     else:
                         out_str += f"{np.imag(sl):.3f}, ,\n"
                     outlines.append(out_str)
+                self.linepq[(n, l)] = [np.real(s_nk), np.imag(s_nk)]
 
-                with open("line_outputs.csv", "w+") as csv_out:
-                    csv_out.writelines(outlines)
+        with open("line_outputs.csv", "w+") as csv_out:
+            csv_out.writelines(outlines)
 
     def plot_convergence_graph(self):
         plt.figure()
         plt.plot(self.convergenceDeltas, label="Delta")
-        plt.title("Delta between iterations as a function of iterations")
+        plt.title("Convergence Graph: Newton-Raphson")
         plt.xlabel("Iteration Number [#]")
-        plt.ylabel("Absolute Delta")
+        plt.ylabel("Max Error Between Current and Previous Iteration")
         plt.legend()
 
     def plot_voltages(self, pu=True, minimum_voltage=0.97):
@@ -333,23 +340,24 @@ class PowerFlowNetwork:
             else:
                 color = "g"
             plt.scatter(x_axis[idx], voltages_pu[idx], color=color)
-            plt.annotate(idx+1, (x_axis[idx], voltages_pu[idx]))
+            plt.annotate(idx + 1, (x_axis[idx], voltages_pu[idx]))
         plt.grid(visible=True, which="both", axis="y")
         plt.minorticks_on()
         plt.xlabel("Bus Number [#]")
         plt.axhline(y=minimum_voltage, color='r', linestyle='--')
 
-    def plot_network_graph(self, minimum_voltage_pu=0.97):
+    def plot_network_graph(self, minimum_voltage_pu=0.97, label_edges=False):
         plt.figure()
         graph = nx.DiGraph()
         voltages = np.abs(self.V)
         colors = []
         labels = dict()
+        edge_labels = dict()
         # Add nodes
         for i in range(int(self.nbus)):
             # Create this bus as a node on the graph
             graph.add_node(i)
-            labels[i] = i+1
+            labels[i] = i + 1
             if i == 0:
                 colors.append("blue")
             elif voltages[i] > minimum_voltage_pu:
@@ -359,12 +367,20 @@ class PowerFlowNetwork:
 
         # Add edges
         for row in self.line_data:
-            graph.add_edge(int(row[0]) - 1, int(row[1]) - 1)
+            start_point = int(row[0]) - 1
+            end_point = int(row[1]) - 1
+            graph.add_edge(start_point, end_point)
+            if label_edges:
+                edge_labels[(start_point, end_point)] = f"{self.linepq[(start_point, end_point)][0]:.1f}[MW], " \
+                                                        f"{self.linepq[(start_point, end_point)][1]:.1f}[MVAR]"
 
-        layout_pos = nx.planar_layout(graph)
+        layout_pos = nx.planar_layout(graph, scale=4)
         plt.title("Network Graph: Busses and Lines")
         nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
                 node_size=280, node_shape='o', edgecolors="black", font_color="white")
+        if label_edges:
+            nx.draw_networkx_edge_labels(graph, pos=layout_pos, edge_labels=edge_labels, rotate=False,
+                                         font_size=6, verticalalignment="center_baseline", alpha=0.5)
 
     def export_bus_data(self, printout=True):
         outlines = ["Bus #, Voltage, Angle, Load MW, Load MVAR, Generator MW, Generator MVAR, Injected MVAR\n"]
