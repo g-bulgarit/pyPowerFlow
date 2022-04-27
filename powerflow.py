@@ -341,7 +341,7 @@ class PowerFlowNetwork:
 
     def plot_network_graph(self, minimum_voltage_pu=0.97):
         plt.figure()
-        graph = nx.Graph()
+        graph = nx.DiGraph()
         voltages = np.abs(self.V)
         colors = []
         labels = dict()
@@ -363,7 +363,8 @@ class PowerFlowNetwork:
 
         layout_pos = nx.planar_layout(graph)
         plt.title("Network Graph: Busses and Lines")
-        nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors)
+        nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
+                node_size=280, node_shape='o', edgecolors="black", font_color="white")
 
     def export_bus_data(self, printout=True):
         outlines = ["Bus #, Voltage, Angle, Load MW, Load MVAR, Generator MW, Generator MVAR, Injected MVAR\n"]
