@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import csv
+import networkx as nx
 
 
 class PowerFlowNetwork:
@@ -330,13 +331,39 @@ class PowerFlowNetwork:
             if voltages_pu[idx] < minimum_voltage:
                 color = "r"
             else:
-                color = "b"
+                color = "g"
             plt.scatter(x_axis[idx], voltages_pu[idx], color=color)
             plt.annotate(idx+1, (x_axis[idx], voltages_pu[idx]))
         plt.grid(visible=True, which="both", axis="y")
         plt.minorticks_on()
         plt.xlabel("Bus Number [#]")
         plt.axhline(y=minimum_voltage, color='r', linestyle='--')
+
+    def plot_network_graph(self, minimum_voltage_pu=0.97):
+        plt.figure()
+        graph = nx.Graph()
+        voltages = np.abs(self.V)
+        colors = []
+        labels = dict()
+        # Add nodes
+        for i in range(int(self.nbus)):
+            # Create this bus as a node on the graph
+            graph.add_node(i)
+            labels[i] = i+1
+            if i == 0:
+                colors.append("blue")
+            elif voltages[i] > minimum_voltage_pu:
+                colors.append('green')
+            else:
+                colors.append('red')
+
+        # Add edges
+        for row in self.line_data:
+            graph.add_edge(int(row[0]) - 1, int(row[1]) - 1)
+
+        layout_pos = nx.planar_layout(graph)
+        plt.title("Network Graph: Busses and Lines")
+        nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors)
 
     def export_bus_data(self, printout=True):
         outlines = ["Bus #, Voltage, Angle, Load MW, Load MVAR, Generator MW, Generator MVAR, Injected MVAR\n"]
