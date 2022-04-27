@@ -379,10 +379,8 @@ class PowerFlowNetwork:
         if printout:
             [print(line) for line in outlines]
             print(f"Bus Totals:\n"
-                  f"Total Dispersed Power: {self.Pd_total:.3f}[MW], {self.Qd_total:.3f}[MVAR]\n"
-                  f"Total Generated Power: {self.Pg_total:.3f}[MW], {self.Qg_total:.3f}[MVAR],"
-                  f"With Capacitors:{self.Q_shunt_total:.3f}[MVAR]")
-
-
-
-
+                  f"Total Dissipated Power: {self.Pd_total:.3f}[MW], {self.Qd_total:.3f}[MVAR]\n"
+                  f"Total Generated Power: {self.Pg_total:.3f}[MW], {self.Qg_total:.3f}[MVAR], "
+                  f"With Capacitors: {self.Q_shunt_total:.3f}[MVAR]")
+            print(f"Difference of {self.Pg_total - self.Pd_total:.3f}[MW] between generated and dissipated power.\n"
+                  f"Relative Error is {(self.Pg_total - self.Pd_total) * 100 / self.Pg_total:.3f}%")
