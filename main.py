@@ -99,4 +99,5 @@ if __name__ == '__main__':
     pf.plot_convergence_graph()
     pf.plot_voltages(pu=False, minimum_voltage=99)
     pf.plot_network_graph(minimum_voltage_pu=0.99, label_edges=False)
+    pf.print_line_currents()
     plt.show()

@@ -13,9 +13,11 @@ class PowerFlowNetwork:
         # Parse Newton-Raphson parameters
         self.accuracy = accuracy
         self.maximumIterations = max_iterations
+        self.converge = 1
 
         # Parse general parameters
         self.basePower = base_power
+        self.current = dict()
 
         # Parse line parameters into arrays
         self.nl = line_parameters[:, 0]
@@ -241,6 +243,7 @@ class PowerFlowNetwork:
             # Check if we are diverging beyond the allowed limit:
             if iteration == self.maximumIterations and max_error > self.accuracy:
                 print(f"Solution did not converge after {iteration} iterations...")
+                self.converge = 0
                 converge = 0
 
         if converge == 1:
@@ -268,6 +271,8 @@ class PowerFlowNetwork:
             self.Q_shunt_total = np.sum(self.Q_shunt)
 
     def calculate_line_flow(self):
+        if not self.converge:
+            return
         slt = 0
         outlines = ["From, To, MW, MVAR, MVA, MW Loss, MVAR Loss, Tap\n"]
 
@@ -282,6 +287,7 @@ class PowerFlowNetwork:
                     bus_body = 1
 
                 if self.nl[l] - 1 == n:
+                    # Do calculation
                     k = int(self.nr[l]) - 1
                     i_n = (self.V[n] - self.a[l] * self.V[k]) * self.y[l] / (self.a[l] ** 2) + \
                         self.B_c[l] / (self.a[l] ** 2) * self.V[n]
@@ -290,8 +296,11 @@ class PowerFlowNetwork:
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
                     slt += s_nk + s_kn
+                    self.current[(n, k)] = i_n - i_k
+                    # self.current[(n, k)] = np.abs(self.S[n] * self.basePower) / (self.V[n] - self.V[k])
 
                 elif self.nr[l] - 1 == n:
+                    # Do calculation
                     k = int(self.nl[l]) - 1
                     i_n = (self.V[n] - self.V[k] / self.a[l]) * self.y[l] + \
                         self.B_c[l] * self.V[n]
@@ -301,6 +310,8 @@ class PowerFlowNetwork:
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
                     slt += s_nk + s_kn
+                    self.current[(n, k)] = i_n - i_k
+                    # self.current[(n, k)] = np.abs(self.S[n] * self.basePower) / (self.V[n] - self.V[k])
 
                 if self.nl[l] - 1 == n or self.nr[l] - 1 == n:
                     out_str = f" , {k + 1}, {np.real(s_nk):.3f}, {np.imag(s_nk):.3f}," \
@@ -311,6 +322,21 @@ class PowerFlowNetwork:
                         out_str += f"{np.imag(sl):.3f}, ,\n"
                     outlines.append(out_str)
                 self.linepq[(n, l)] = [np.real(s_nk), np.imag(s_nk)]
+
+        pairs = list(self.current.keys())
+
+        for idx in range (int(self.nbus)):
+            outbound_current = 0
+            inbound_current = 0
+            for pair in pairs:
+                if pair[0] == idx:
+                    # this is an outbound connection
+                    outbound_current += self.current[pair]
+                if pair[1] == idx:
+                    # this is an inbound connection
+                    inbound_current += self.current[pair]
+            print(f"Node: {idx+1}, In: {inbound_current}, Out: {outbound_current}, "
+                  f"Delta: {outbound_current + inbound_current}")
 
         with open("line_outputs.csv", "w+") as csv_out:
             csv_out.writelines(outlines)
@@ -324,6 +350,8 @@ class PowerFlowNetwork:
         plt.legend()
 
     def plot_voltages(self, pu=True, minimum_voltage=0.97):
+        if not self.converge:
+            return
         plt.figure()
         voltages_pu = np.abs(self.V)
         plt.ylabel("Voltage [pu]")
@@ -347,6 +375,8 @@ class PowerFlowNetwork:
         plt.axhline(y=minimum_voltage, color='r', linestyle='--')
 
     def plot_network_graph(self, minimum_voltage_pu=0.97, label_edges=False):
+        if not self.converge:
+            return
         plt.figure()
         graph = nx.DiGraph()
         voltages = np.abs(self.V)
@@ -374,7 +404,8 @@ class PowerFlowNetwork:
                 edge_labels[(start_point, end_point)] = f"{self.linepq[(start_point, end_point)][0]:.1f}[MW], " \
                                                         f"{self.linepq[(start_point, end_point)][1]:.1f}[MVAR]"
 
-        layout_pos = nx.planar_layout(graph, scale=4)
+        #layout_pos = nx.planar_layout(graph, scale=4)
+        layout_pos = nx.spring_layout(graph, k=3)
         plt.title("Network Graph: Busses and Lines")
         nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
                 node_size=280, node_shape='o', edgecolors="black", font_color="white")
@@ -383,9 +414,11 @@ class PowerFlowNetwork:
                                          font_size=6, verticalalignment="center_baseline", alpha=0.5)
 
     def export_bus_data(self, printout=True):
+        if not self.converge:
+            return
         outlines = ["Bus #, Voltage, Angle, Load MW, Load MVAR, Generator MW, Generator MVAR, Injected MVAR\n"]
         for i in range(int(self.nbus)):
-            outlines.append(f"{i}, {self.Vm[i]:.3f}, {self.delta_degrees[i]:.3f}, "
+            outlines.append(f"{i+1}, {self.Vm[i]:.3f}, {self.delta_degrees[i]:.3f}, "
                             f"{self.Pd[i]:.3f}, {self.Qd[i]:.3f}, {self.Pg[i]:.3f},"
                             f"{self.Qg[i]:.3f}, {self.Q_shunt[i]:.3f}\n")
 
@@ -400,3 +433,12 @@ class PowerFlowNetwork:
                   f"With Capacitors: {self.Q_shunt_total:.3f}[MVAR]")
             print(f"Difference of {self.Pg_total - self.Pd_total:.3f}[MW] between generated and dissipated power.\n"
                   f"Relative Error is {(self.Pg_total - self.Pd_total) * 100 / self.Pg_total:.3f}%")
+
+    def print_line_currents(self):
+        if not self.converge:
+            return
+
+        for pair in list(self.current.keys()):
+            abscurrent = np.abs(self.current[pair])
+            phasecurrent = np.angle(self.current[pair])
+            print(f"{pair[0]} -> {pair[1]}: {abscurrent}[A] with angle {phasecurrent}[rad?]")
