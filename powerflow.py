@@ -439,6 +439,6 @@ class PowerFlowNetwork:
             return
 
         for pair in list(self.current.keys()):
-            abscurrent = np.abs(self.current[pair])
-            phasecurrent = np.angle(self.current[pair])
-            print(f"{pair[0]} -> {pair[1]}: {abscurrent}[A] with angle {phasecurrent}[rad?]")
+            abs_current = np.abs(self.current[pair])
+            phase_current = np.angle(self.current[pair])
+            print(f"{pair[0]} -> {pair[1]}: {abs_current}[A] with angle {phase_current}[rad?]")
