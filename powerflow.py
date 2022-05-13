@@ -24,7 +24,6 @@ class PowerFlowNetwork:
         self.R = line_parameters[:, 2]
         self.X = line_parameters[:, 3]
         self.B_c = 1j * line_parameters[:, 4]
-        self.a = line_parameters[:, 5]
         self.nbr = len(line_parameters[:, 1])
 
         # Parse bus parameters
@@ -81,22 +80,16 @@ class PowerFlowNetwork:
         # Prepare admittance matrix placeholder:
         ybus = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
 
-        # Fill gaps:
-        for n in range(0, int(self.nbr)):
-            if self.a[n] <= 0:
-                self.a[n] = 1
-
         # Assign values in the admittance matrix that are not on the diagonal:
         for k in range(0, int(self.nbr)):
-            ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] - \
-                                                             self.y[k] / self.a[k]
+            ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1] - self.y[k]
             ybus[int(self.nr[k]) - 1, int(self.nl[k]) - 1] = ybus[int(self.nl[k]) - 1, int(self.nr[k]) - 1]
 
         # Assign values in the admittance matrix that are on the diagonal
         for n in range(0, int(self.nbus)):
             for k in range(0, int(self.nbr)):
                 if (self.nl[k] - 1) == n:
-                    ybus[n, n] = ybus[n, n] + self.B_c[k] + self.y[k] / ((self.a[k]) ** 2)
+                    ybus[n, n] = ybus[n, n] + self.B_c[k] + self.y[k]
                 elif (self.nr[k] - 1) == n:
                     ybus[n, n] = ybus[n, n] + self.y[k] + self.B_c[k]
                 else:
@@ -288,9 +281,8 @@ class PowerFlowNetwork:
                 if self.nl[l] - 1 == n:
                     # Do calculation
                     k = int(self.nr[l]) - 1
-                    i_n = (self.V[n] - self.a[l] * self.V[k]) * self.y[l] / (self.a[l] ** 2) + \
-                        self.B_c[l] / (self.a[l] ** 2) * self.V[n]
-                    i_k = (self.V[k] - self.V[n] / self.a[l]) * self.y[l] + self.B_c[l] * self.V[k]
+                    i_n = (self.V[n] - self.V[k]) * self.y[l] + self.B_c[l] * self.V[n]
+                    i_k = (self.V[k] - self.V[n]) * self.y[l] + self.B_c[l] * self.V[k]
                     s_nk = self.V[n] * np.conj(i_n) * self.basePower
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
@@ -300,10 +292,10 @@ class PowerFlowNetwork:
                 elif self.nr[l] - 1 == n:
                     # Do calculation
                     k = int(self.nl[l]) - 1
-                    i_n = (self.V[n] - self.V[k] / self.a[l]) * self.y[l] + \
-                        self.B_c[l] * self.V[n]
-                    i_k = (self.V[k] - self.a[l] * self.V[n]) * self.y[l] / (self.a[l] ** 2) + \
-                        self.B_c[l] / (self.a[l] ** 2) * self.V[k]
+
+                    # Calc current:
+                    i_n = (self.V[n] - self.V[k]) * self.y[l] + self.B_c[l] * self.V[n]
+                    i_k = (self.V[k] - self.V[n]) * self.y[l] + self.B_c[l] * self.V[k]
                     s_nk = self.V[n] * np.conj(i_n) * self.basePower
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
@@ -315,16 +307,14 @@ class PowerFlowNetwork:
                 if self.nl[l] - 1 == n or self.nr[l] - 1 == n:
                     out_str = f" , {k + 1}, {np.real(s_nk):.3f}, {np.imag(s_nk):.3f}," \
                               f" {np.abs(s_nk):.3f}, {np.real(sl):.3f}, "
-                    if self.nl[l] - 1 == n and self.a[l] != 1:
-                        out_str += f"{np.imag(sl):.3f}, {self.a[l]:.3f}\n"
-                    else:
-                        out_str += f"{np.imag(sl):.3f}, ,\n"
+
+                    out_str += f"{np.imag(sl):.3f}, ,\n"
                     outlines.append(out_str)
                 self.linepq[(n, l)] = [np.real(s_nk), np.imag(s_nk)]
 
         pairs = list(self.current.keys())
 
-        for idx in range (int(self.nbus)):
+        for idx in range(int(self.nbus)):
             outbound_current = 0
             inbound_current = 0
             for pair in pairs:
