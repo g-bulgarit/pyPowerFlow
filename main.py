@@ -4,7 +4,7 @@ from matplotlib import pyplot as plt
 from powerflow import PowerFlowNetwork
 # Bus codes: 1 Slack, 0: just load, 2: generator and load
 #        Bus Bus    Voltage Angle   ---Load----     -------Generator----- Static Mvar
-#        No  code   Mag.    Degree  MW    Mvar       MW  Mvar Qmin Qmax    +Qc/-Ql
+#        No  type   Mag.    Degree  MW    Mvar       MW  Mvar Qmin Qmax    +Qc/-Ql
 bus_params = np.asarray(
         [1,   1,    1.025,    0.0,   51.0,  41.0,    0.0,  0.0,   0,   0,       4,
          2,   2,    1.020,   0.0,    22.0,    15,   79.0,  0.0,  40.0, 250.0,   0,
