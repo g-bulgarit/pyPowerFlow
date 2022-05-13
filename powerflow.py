@@ -1,6 +1,5 @@
 import numpy as np
 from matplotlib import pyplot as plt
-import csv
 import networkx as nx
 
 
@@ -296,8 +295,7 @@ class PowerFlowNetwork:
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
                     slt += s_nk + s_kn
-                    self.current[(n, k)] = i_n - i_k
-                    # self.current[(n, k)] = np.abs(self.S[n] * self.basePower) / (self.V[n] - self.V[k])
+                    self.current[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
 
                 elif self.nr[l] - 1 == n:
                     # Do calculation
@@ -309,9 +307,10 @@ class PowerFlowNetwork:
                     s_nk = self.V[n] * np.conj(i_n) * self.basePower
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
+
+                    # calculate current also
+                    self.current[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
                     slt += s_nk + s_kn
-                    self.current[(n, k)] = i_n - i_k
-                    # self.current[(n, k)] = np.abs(self.S[n] * self.basePower) / (self.V[n] - self.V[k])
 
                 if self.nl[l] - 1 == n or self.nr[l] - 1 == n:
                     out_str = f" , {k + 1}, {np.real(s_nk):.3f}, {np.imag(s_nk):.3f}," \
@@ -342,11 +341,15 @@ class PowerFlowNetwork:
             csv_out.writelines(outlines)
 
     def plot_convergence_graph(self):
+        """
+        in pu
+        :return:
+        """
         plt.figure()
         plt.plot(self.convergenceDeltas, label="Delta")
         plt.title("Convergence Graph: Newton-Raphson")
         plt.xlabel("Iteration Number [#]")
-        plt.ylabel("Max Error Between Current and Previous Iteration")
+        plt.ylabel("Max difference of power between iterations")
         plt.legend()
 
     def plot_voltages(self, pu=True, minimum_voltage=0.97):
@@ -441,4 +444,4 @@ class PowerFlowNetwork:
         for pair in list(self.current.keys()):
             abs_current = np.abs(self.current[pair])
             phase_current = np.angle(self.current[pair])
-            print(f"{pair[0]} -> {pair[1]}: {abs_current}[A] with angle {phase_current}[rad?]")
+            print(f"{pair[0] + 1} -> {pair[1] + 1}: {abs_current}[A, pu] with angle {phase_current}[rad?]")
