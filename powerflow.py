@@ -4,7 +4,7 @@ import networkx as nx
 
 
 class PowerFlowNetwork:
-    def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations):
+    def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations, mode="newton"):
         # Keep line and bus parameters in the object
         self.bus_data = bus_parameters
         self.line_data = line_parameters
@@ -27,7 +27,7 @@ class PowerFlowNetwork:
         self.nlines = len(line_parameters[:, 1])
 
         # Parse bus parameters
-        self.nbus = np.max([np.max(self.line_left), np.max(self.line_right)])
+        self.nbus = np.max(bus_parameters[:, 0])
 
         # Calculate admittances and impedances
         self.Z = self.R + 1j * self.X
@@ -54,10 +54,11 @@ class PowerFlowNetwork:
         self.Q_shunt = np.zeros(int(self.nbus))
         self.P_geng = np.zeros(int(self.nbus))
         self.Q_geng = np.zeros(int(self.nbus))
-        self.ngs = np.zeros(int(self.nbus))
-        self.nss = np.zeros(int(self.nbus))
-        self.ns = 0
-        self.ng = 0
+        self.num_gen_seen = np.zeros(int(self.nbus))
+        self.num_slack_seen = np.zeros(int(self.nbus))
+        self.num_slack = 0
+        self.num_gen = 0
+        self.nload = 0
         self.delta_degrees = np.zeros(int(self.nbus))
         self.y_load = np.zeros(int(self.nbus), dtype=np.complex128)
         self.P_gen_total = 0
@@ -68,7 +69,9 @@ class PowerFlowNetwork:
         self.linepq = dict()
 
         # Solve:
-        self.newton_raphson_solver()
+        if mode == "newton":
+            self.newton_raphson_solver()
+        # TODO: Add gauss
         self.calculate_line_flow()
 
     def calculate_admittance_matrix(self) -> np.ndarray:
@@ -80,16 +83,16 @@ class PowerFlowNetwork:
         # Prepare admittance matrix placeholder:
         ybus = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
 
-        # Assign values in the admittance matrix that are not on the diagonal:
+        # Assign values in the admittance matrix that are not on the diagonal, by inputting the line data:
         for k in range(0, int(self.nlines)):
-            ybus[int(self.line_left[k]) - 1, int(self.line_right[k]) - 1] = ybus[int(self.line_left[k]) - 1, int(self.line_right[k]) - 1] - self.y[k]
+            ybus[int(self.line_left[k]) - 1, int(self.line_right[k]) - 1] = -1 * self.y[k]
             ybus[int(self.line_right[k]) - 1, int(self.line_left[k]) - 1] = ybus[int(self.line_left[k]) - 1, int(self.line_right[k]) - 1]
 
         # Assign values in the admittance matrix that are on the diagonal
         for n in range(0, int(self.nbus)):
             for k in range(0, int(self.nlines)):
                 if (self.line_left[k] - 1) == n:
-                    ybus[n, n] = ybus[n, n] + self.B_c[k] + self.y[k]
+                    ybus[n, n] = ybus[n, n] + self.y[k] + self.B_c[k]
                 elif (self. line_right[k] - 1) == n:
                     ybus[n, n] = ybus[n, n] + self.y[k] + self.B_c[k]
                 else:
@@ -103,7 +106,8 @@ class PowerFlowNetwork:
             # Parse:
             self.bus_type[n] = self.bus_data[k, 1]
             self.V_mag[n] = self.bus_data[k, 2]
-            self.delta[n] = self.bus_data[k, 3]  # Phase (angle)
+            self.delta_degrees[n] = self.bus_data[k, 3]            # Phasor angle (in degrees)
+            self.delta[n] = (np.pi / 180) * self.delta_degrees[n]  # Convert to radians
             self.P_load[n] = self.bus_data[k, 4]
             self.Q_load[n] = self.bus_data[k, 5]
             self.P_gen[n] = self.bus_data[k, 6]
@@ -112,47 +116,57 @@ class PowerFlowNetwork:
             self.Q_max[n] = self.bus_data[k, 9]
             self.Q_shunt[n] = self.bus_data[k, 10]
 
-            # Create initial guess for voltages - set all voltages to 1.0 p.u
-            if self.V_mag[n] <= 0:
+            # Override(!) bus parameters based on type (load, slack, gen)
+            if self.bus_type[n] == 0:  # Load
                 self.V_mag[n] = 1
-                self.V[n] = 1 + 0j
-
+                self.delta[n] = 0
+            elif self.bus_type[n] == 1:  # Slack
+                self.P_gen[n] = 0
+                self.Q_gen[n] = 0
+            elif self.bus_type[n] == 2:  # Generator
+                self.delta[n] = 0
+                self.Q_gen[n] = 0
             else:
-                self.delta[n] = (np.pi / 180) * self.delta[n]
-                self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
-                self.P[n] = (self.P_gen[n] - self.P_load[n]) / self.basePower
-                self.Q[n] = (self.Q_gen[n] - self.Q_load[n] + self.Q_shunt[n]) / self.basePower
-                self.S[n] = self.P[n] + 1j * self.Q[n]
+                exit("Wrong bus type in input")
 
-        # Do something
+            self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
+            self.P[n] = (self.P_gen[n] - self.P_load[n]) / self.basePower
+            self.Q[n] = (self.Q_gen[n] - self.Q_load[n] + self.Q_shunt[n]) / self.basePower
+            self.S[n] = self.P[n] + 1j * self.Q[n]
+
         for k in range(0, int(self.nbus)):
             if self.bus_type[k] == 1:
-                self.ns += 1
-            if self.bus_type[k] == 2:
-                self.ng += 1
+                self.num_slack += 1
+            elif self.bus_type[k] == 2:
+                self.num_gen += 1
+            elif self.bus_type[k] == 0:
+                self.nload += 1
 
-            self.ngs[k] = self.ng
-            self.nss[k] = self.ns
+            self.num_gen_seen[k] = self.num_gen
+            self.num_slack_seen[k] = self.num_slack
 
         # Convert to a phasor-vector, separated to two vectors, one for magnitude and one for phase
-        ym = np.abs(self.ybus)
-        t = np.angle(self.ybus)
-        m = int(2 * self.nbus - self.ng - (2 * self.ns))
+        y_mag = np.abs(self.ybus)
+        y_angle = np.angle(self.ybus)
+
+        # Calculate jacobian matrix size based on how many variables we need to find
+        num_unknowns = int(2 * self.nload + self.num_gen)
+        
         max_error = 1
         converge = 1
         iteration = 0
 
         # Start iterating over solution
         while max_error >= self.accuracy and iteration <= self.maximumIterations:
-            jacobian_matrix = np.zeros((m, m))
-            dc_vec = np.zeros(m)
+            jacobian_matrix = np.zeros((num_unknowns, num_unknowns))
+            dc_vec = np.zeros(num_unknowns)
 
             iteration += 1  # increment iteration
 
             # Start calculation
             for n in range(0, int(self.nbus)):
-                nn = int(n - self.nss[n])
-                lm = int(self.nbus + n - self.ngs[n] - self.nss[n] - self.ns)
+                nn = int(n - self.num_slack_seen[n])
+                lm = int(self.nbus + n - self.num_gen_seen[n] - self.num_slack_seen[n] - self.num_slack)
 
                 # Jacobian elements:
                 j11 = 0
@@ -160,37 +174,37 @@ class PowerFlowNetwork:
                 j33 = 0
                 j44 = 0
 
-                for i in range(0, int(self.nlines)):  # check -1 here
+                for i in range(0, int(self.nlines)):
                     if (self. line_left[i] - 1) == n or (self. line_right[i] - 1) == n:
                         if (self. line_left[i] - 1) == n:
                             l = int(self. line_right[i]) - 1
                         if (self. line_right[i] - 1) == n:
                             l = int(self. line_left[i]) - 1
-                        j11 += self.V_mag[n] * self.V_mag[l] * ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
-                        j33 += self.V_mag[n] * self.V_mag[l] * ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
+                        j11 += self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.sin(y_angle[n, l] - self.delta[n] + self.delta[l])
+                        j33 += self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.cos(y_angle[n, l] - self.delta[n] + self.delta[l])
 
                         if self.bus_type[n] != 1:
-                            j22 += self.V_mag[l] * ym[n, l] * np.cos(t[n, l] - self.delta[n] + self.delta[l])
-                            j44 += self.V_mag[l] * ym[n, l] * np.sin(t[n, l] - self.delta[n] + self.delta[l])
+                            j22 += self.V_mag[l] * y_mag[n, l] * np.cos(y_angle[n, l] - self.delta[n] + self.delta[l])
+                            j44 += self.V_mag[l] * y_mag[n, l] * np.sin(y_angle[n, l] - self.delta[n] + self.delta[l])
 
                         if self.bus_type[n] != 1 and self.bus_type[l] != 1:
-                            lk = int(self.nbus + l - self.ngs[l] - self.nss[l] - self.ns)
-                            ll = int(l - self.nss[l])
+                            lk = int(self.nbus + l - self.num_gen_seen[l] - self.num_slack_seen[l] - self.num_slack)
+                            ll = int(l - self.num_slack_seen[l])
                             # Calculate the elements off of the diagonal:
-                            jacobian_matrix[nn, ll] = -1 * self.V_mag[n] * self.V_mag[l] * ym[n, l] * np.sin(
-                                t[n, l] - self.delta[n] + self.delta[l])
+                            jacobian_matrix[nn, ll] = -1 * self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.sin(
+                                y_angle[n, l] - self.delta[n] + self.delta[l])
                             if self.bus_type[l] == 0:
-                                jacobian_matrix[nn, lk] = self.V_mag[n] * ym[n, l] * np.cos(
-                                    t[n, l] - self.delta[n] + self.delta[l])
+                                jacobian_matrix[nn, lk] = self.V_mag[n] * y_mag[n, l] * np.cos(
+                                    y_angle[n, l] - self.delta[n] + self.delta[l])
                             if self.bus_type[n] == 0:
-                                jacobian_matrix[lm, ll] = -1 * self.V_mag[n] * self.V_mag[l] * ym[n, l] * np.cos(
-                                    t[n, l] - self.delta[n] + self.delta[l])
+                                jacobian_matrix[lm, ll] = -1 * self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.cos(
+                                    y_angle[n, l] - self.delta[n] + self.delta[l])
                             if self.bus_type[n] == 0 and self.bus_type[l] == 0:
-                                jacobian_matrix[lm, lk] = -1 * self.V_mag[n] * ym[n, l] * np.sin(
-                                    t[n, l] - self.delta[n] + self.delta[l])
+                                jacobian_matrix[lm, lk] = -1 * self.V_mag[n] * y_mag[n, l] * np.sin(
+                                    y_angle[n, l] - self.delta[n] + self.delta[l])
 
-                Pk = (self.V_mag[n] ** 2) * ym[n, n] * np.cos(t[n, n]) + j33
-                Qk = -1 * (self.V_mag[n] ** 2) * ym[n, n] * np.sin(t[n, n]) - j11
+                Pk = (self.V_mag[n] ** 2) * y_mag[n, n] * np.cos(y_angle[n, n]) + j33
+                Qk = -1 * (self.V_mag[n] ** 2) * y_mag[n, n] * np.sin(y_angle[n, n]) - j11
 
                 # Handle the slack bus
                 if self.bus_type[n] == 1:
@@ -213,17 +227,17 @@ class PowerFlowNetwork:
                     dc_vec[nn] = self.P[n] - Pk
 
                 if int(self.bus_type[n]) == 0:
-                    jacobian_matrix[nn, lm] = (2 * self.V_mag[n] * ym[n, n] * np.cos(t[n, n])) + j22
+                    jacobian_matrix[nn, lm] = (2 * self.V_mag[n] * y_mag[n, n] * np.cos(y_angle[n, n])) + j22
                     jacobian_matrix[lm, nn] = j33
-                    jacobian_matrix[lm, lm] = (-2 * self.V_mag[n] * ym[n, n] * np.sin(t[n, n])) - j44
+                    jacobian_matrix[lm, lm] = (-2 * self.V_mag[n] * y_mag[n, n] * np.sin(y_angle[n, n])) - j44
                     dc_vec[lm] = self.Q[n] - Qk
 
             # Solve with least-squares
             dx_vec = np.linalg.lstsq(jacobian_matrix, dc_vec.T, rcond=None)[0]
 
             for n in range(0, int(self.nbus)):
-                nn = int(n - self.nss[n])
-                lm = int(self.nbus + n - self.ngs[n] - self.nss[n] - self.ns)
+                nn = int(n - self.num_slack_seen[n])
+                lm = int(self.nbus + n - self.num_gen_seen[n] - self.num_slack_seen[n] - self.num_slack)
                 if self.bus_type[n] != 1:
                     self.delta[n] += dx_vec[nn]
                 if self.bus_type[n] == 0:
