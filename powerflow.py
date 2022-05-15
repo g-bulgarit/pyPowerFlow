@@ -35,6 +35,7 @@ class PowerFlowNetwork:
 
         # Find admittance matrix
         self.ybus = self.calculate_admittance_matrix()
+        self.y_to_gnd = self.calculate_admittance_to_gnd()
 
         # Initialize output parameters
         self.convergenceDeltas = []
@@ -68,10 +69,16 @@ class PowerFlowNetwork:
         self.Q_shunt_total = 0
         self.linepq = dict()
 
+        # Parse bus parameters
+        self.init_bus_data()
+
+        # Todo: init line data
+
         # Solve:
         if mode == "newton":
             self.newton_raphson_solver()
-        # TODO: Add gauss
+        elif mode == "gauss":  # TODO: Add gauss - check
+            self.gauss_solver()
         self.calculate_line_flow()
 
     def calculate_admittance_matrix(self) -> np.ndarray:
@@ -86,20 +93,33 @@ class PowerFlowNetwork:
         # Assign values in the admittance matrix that are not on the diagonal, by inputting the line data:
         for k in range(0, int(self.nlines)):
             ybus[int(self.line_left[k]) - 1, int(self.line_right[k]) - 1] = -1 * self.y[k]
-            ybus[int(self.line_right[k]) - 1, int(self.line_left[k]) - 1] = ybus[int(self.line_left[k]) - 1, int(self.line_right[k]) - 1]
+            ybus[int(self.line_right[k]) - 1, int(self.line_left[k]) - 1] = ybus[
+                int(self.line_left[k]) - 1, int(self.line_right[k]) - 1]
 
         # Assign values in the admittance matrix that are on the diagonal
-        for n in range(0, int(self.nbus)):
-            for k in range(0, int(self.nlines)):
-                if (self.line_left[k] - 1) == n:
-                    ybus[n, n] = ybus[n, n] + self.y[k] + self.B_c[k]
-                elif (self. line_right[k] - 1) == n:
-                    ybus[n, n] = ybus[n, n] + self.y[k] + self.B_c[k]
+        for bus_idx in range(0, int(self.nbus)):
+            for line_idx in range(0, int(self.nlines)):
+                if (self.line_left[line_idx] - 1) == bus_idx:
+                    ybus[bus_idx, bus_idx] += self.y[line_idx] + self.B_c[line_idx]
+                elif (self.line_right[line_idx] - 1) == bus_idx:
+                    ybus[bus_idx, bus_idx] += self.y[line_idx] + self.B_c[line_idx]
                 else:
                     continue
         return ybus
 
-    def newton_raphson_solver(self):
+    def calculate_admittance_to_gnd(self) -> np.ndarray:
+        # Return a vector of total capacitance (in admittance) in every bus
+
+        # Prepare admittance matrix placeholder:
+        y_to_gnd = np.zeros(int(self.nbus), dtype=np.complex128)
+
+        for n in range(0, int(self.nbus)):
+            y_to_gnd[n] = np.sum(self.ybus[n, :])
+        return y_to_gnd
+
+    def init_bus_data(self):
+        # Prepare for numeric calculation by reading all inputs in the correct format.
+
         # Find voltage, real and imaginary power, and total power in complex units
         for k in range(0, int(self.nbus)):
             n = int(self.bus_data[k, 0] - 1)
@@ -131,9 +151,10 @@ class PowerFlowNetwork:
 
             self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
             self.P[n] = (self.P_gen[n] - self.P_load[n]) / self.basePower
-            self.Q[n] = (self.Q_gen[n] - self.Q_load[n] + self.Q_shunt[n]) / self.basePower
+            self.Q[n] = (self.Q_gen[n] - (self.Q_load[n] - self.Q_shunt[n])) / self.basePower
             self.S[n] = self.P[n] + 1j * self.Q[n]
 
+    def newton_raphson_solver(self):
         for k in range(0, int(self.nbus)):
             if self.bus_type[k] == 1:
                 self.num_slack += 1
@@ -151,7 +172,7 @@ class PowerFlowNetwork:
 
         # Calculate jacobian matrix size based on how many variables we need to find
         num_unknowns = int(2 * self.nload + self.num_gen)
-        
+
         max_error = 1
         converge = 1
         iteration = 0
@@ -175,13 +196,15 @@ class PowerFlowNetwork:
                 j44 = 0
 
                 for i in range(0, int(self.nlines)):
-                    if (self. line_left[i] - 1) == n or (self. line_right[i] - 1) == n:
-                        if (self. line_left[i] - 1) == n:
-                            l = int(self. line_right[i]) - 1
-                        if (self. line_right[i] - 1) == n:
-                            l = int(self. line_left[i]) - 1
-                        j11 += self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.sin(y_angle[n, l] - self.delta[n] + self.delta[l])
-                        j33 += self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.cos(y_angle[n, l] - self.delta[n] + self.delta[l])
+                    if (self.line_left[i] - 1) == n or (self.line_right[i] - 1) == n:
+                        if (self.line_left[i] - 1) == n:
+                            l = int(self.line_right[i]) - 1
+                        if (self.line_right[i] - 1) == n:
+                            l = int(self.line_left[i]) - 1
+                        j11 += self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.sin(
+                            y_angle[n, l] - self.delta[n] + self.delta[l])
+                        j33 += self.V_mag[n] * self.V_mag[l] * y_mag[n, l] * np.cos(
+                            y_angle[n, l] - self.delta[n] + self.delta[l])
 
                         if self.bus_type[n] != 1:
                             j22 += self.V_mag[l] * y_mag[n, l] * np.cos(y_angle[n, l] - self.delta[n] + self.delta[l])
@@ -254,7 +277,7 @@ class PowerFlowNetwork:
 
         if converge == 1:
             print(f"Solution converged after {iteration} iterations!")
-            self.V = self.V_mag * np.cos(self.delta) + 1j * self.V_mag * np.sin(self.delta)
+            self.V = self.V_mag * (np.cos(self.delta) + 1j *  np.sin(self.delta))
             self.delta_degrees = (180 / np.pi) * self.delta
 
             k = 0
@@ -276,6 +299,69 @@ class PowerFlowNetwork:
             self.Q_load_total = np.sum(self.Q_load)
             self.Q_shunt_total = np.sum(self.Q_shunt)
 
+    def gauss_solver(self):
+        max_error = 1
+        converge = 1
+        # Todo add convergence
+        iteration = 0
+
+        # Start iterating over solution
+        while max_error >= self.accuracy and iteration <= self.maximumIterations:
+            iteration += 1
+            # Iteratively find the voltages in all busses
+            for n in range(0, int(self.nbus)):
+                if self.bus_type[n] == 1:  # Slack bus
+                    continue
+                elif self.bus_type[n] == 0:  # Only load
+                    self.V[n] = self.calc_v(n)
+                elif self.bus_type[n] == 2:  # Generator and Load (known voltage)
+                    self.Q[n] = -1 * np.imag(np.conj(self.V[n]) * self.calc_current(n))
+                    self.S[n] = self.P[n] + 1j * self.Q[n]
+                    V_imag = np.imag(self.calc_v(n))
+                    V_real = np.sqrt(np.square(self.V_mag[n]) - np.square(V_imag))
+                    self.V[n] = V_real + 1j * V_imag
+                    # delta = 1
+                    # self.convergenceDeltas.append(delta)
+
+        # Find other parameters from voltage and other known param
+        for bus_idx in range(0, int(self.nbus)):
+            self.V_mag[bus_idx] = np.abs(self.V[bus_idx])
+            self.delta[bus_idx] = np.angle(self.V[bus_idx])
+
+            if self.bus_type[bus_idx] == 0:  # Only load
+                continue
+
+            if self.bus_type[bus_idx] == 1:  # Slack bus calculations
+                self.P[bus_idx] = np.real(np.conj(self.V[bus_idx]) * self.calc_current(bus_idx))
+                self.Q[bus_idx] = -1 * np.imag(np.conj(self.V[bus_idx]) * self.calc_current(bus_idx))
+                self.S[bus_idx] = self.P[bus_idx] + 1j * self.Q[bus_idx]
+                self.P_gen[bus_idx] = self.P[bus_idx] + self.P_load[bus_idx]
+                self.Q_gen[bus_idx] = self.Q[bus_idx] + self.Q_load[bus_idx] - self.Q_shunt[bus_idx]
+
+            elif self.bus_type[bus_idx] == 2:  # Load and generator (P is given)
+                self.Q_gen[bus_idx] = self.Q[bus_idx] + self.Q_load[bus_idx] - self.Q_shunt[bus_idx]
+
+    def calc_v(self, bus_idx: int):
+        denominator = self.ybus[bus_idx, bus_idx]
+        numerator = np.conj(self.S[bus_idx] / self.V[bus_idx])
+        temp = 0
+        for k in range(0, int(self.nbus)):
+            if k == bus_idx:
+                continue
+            temp += self.V[k] * self.ybus[bus_idx, k]
+        numerator -= temp
+        return numerator / denominator
+
+    def calc_current(self, bus_idx: int):
+        current = self.V[bus_idx] * self.ybus[bus_idx, bus_idx]
+        temp = 0
+        for k in range(0, int(self.nbus)):
+            if k == bus_idx:
+                continue
+            temp += self.V[k] * self.ybus[bus_idx, k]  # ybus is negative
+        current += temp
+        return current
+
     def calculate_line_flow(self):
         if not self.converge:
             return
@@ -292,9 +378,9 @@ class PowerFlowNetwork:
                                     f" {np.abs(self.S[n] * self.basePower):.3f}\n")
                     bus_body = 1
 
-                if self. line_left[l] - 1 == n:
+                if self.line_left[l] - 1 == n:
                     # Do calculation
-                    k = int(self. line_right[l]) - 1
+                    k = int(self.line_right[l]) - 1
                     i_n = (self.V[n] - self.V[k]) * self.y[l] + self.B_c[l] * self.V[n]
                     i_k = (self.V[k] - self.V[n]) * self.y[l] + self.B_c[l] * self.V[k]
                     s_nk = self.V[n] * np.conj(i_n) * self.basePower
@@ -303,9 +389,9 @@ class PowerFlowNetwork:
                     slt += s_nk + s_kn
                     self.current[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
 
-                elif self. line_right[l] - 1 == n:
+                elif self.line_right[l] - 1 == n:
                     # Do calculation
-                    k = int(self. line_left[l]) - 1
+                    k = int(self.line_left[l]) - 1
 
                     # Calc current:
                     i_n = (self.V[n] - self.V[k]) * self.y[l] + self.B_c[l] * self.V[n]
@@ -318,7 +404,7 @@ class PowerFlowNetwork:
                     self.current[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
                     slt += s_nk + s_kn
 
-                if self. line_left[l] - 1 == n or self. line_right[l] - 1 == n:
+                if self.line_left[l] - 1 == n or self.line_right[l] - 1 == n:
                     out_str = f" , {k + 1}, {np.real(s_nk):.3f}, {np.imag(s_nk):.3f}," \
                               f" {np.abs(s_nk):.3f}, {np.real(sl):.3f}, "
 
@@ -338,7 +424,7 @@ class PowerFlowNetwork:
                 if pair[1] == idx:
                     # this is an inbound connection
                     inbound_current += self.current[pair]
-            print(f"Node: {idx+1}, In: {inbound_current}, Out: {outbound_current}, "
+            print(f"Node: {idx + 1}, In: {inbound_current}, Out: {outbound_current}, "
                   f"Delta: {outbound_current + inbound_current}")
 
         with open("line_outputs.csv", "w+") as csv_out:
@@ -411,7 +497,7 @@ class PowerFlowNetwork:
                 edge_labels[(start_point, end_point)] = f"{self.linepq[(start_point, end_point)][0]:.1f}[MW], " \
                                                         f"{self.linepq[(start_point, end_point)][1]:.1f}[MVAR]"
 
-        #layout_pos = nx.planar_layout(graph, scale=4)
+        # layout_pos = nx.planar_layout(graph, scale=4)
         layout_pos = nx.spring_layout(graph, k=3)
         plt.title("Network Graph: Busses and Lines")
         nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
@@ -425,7 +511,7 @@ class PowerFlowNetwork:
             return
         outlines = ["Bus #, Voltage, Angle, Load MW, Load MVAR, Generator MW, Generator MVAR, Injected MVAR\n"]
         for i in range(int(self.nbus)):
-            outlines.append(f"{i+1}, {self.V_mag[i]:.3f}, {self.delta_degrees[i]:.3f}, "
+            outlines.append(f"{i + 1}, {self.V_mag[i]:.3f}, {self.delta_degrees[i]:.3f}, "
                             f"{self.P_load[i]:.3f}, {self.Q_load[i]:.3f}, {self.P_gen[i]:.3f},"
                             f"{self.Q_gen[i]:.3f}, {self.Q_shunt[i]:.3f}\n")
 
@@ -438,8 +524,9 @@ class PowerFlowNetwork:
                   f"Total Dissipated Power: {self.P_load_total:.3f}[MW], {self.Q_load_total:.3f}[MVAR]\n"
                   f"Total Generated Power: {self.P_gen_total:.3f}[MW], {self.Q_gen_total:.3f}[MVAR], "
                   f"With Capacitors: {self.Q_shunt_total:.3f}[MVAR]")
-            print(f"Difference of {self.P_gen_total - self.P_load_total:.3f}[MW] between generated and dissipated power.\n"
-                  f"Relative Error is {(self.P_gen_total - self.P_load_total) * 100 / self.P_gen_total:.3f}%")
+            print(
+                f"Difference of {self.P_gen_total - self.P_load_total:.3f}[MW] between generated and dissipated power.\n"
+                f"Relative Error is {(self.P_gen_total - self.P_load_total) * 100 / self.P_gen_total:.3f}%")
 
     def print_line_currents(self):
         if not self.converge:
