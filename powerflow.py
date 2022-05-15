@@ -5,6 +5,8 @@ import networkx as nx
 
 class PowerFlowNetwork:
     def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations, mode="newton"):
+        self.mode = mode
+
         # Keep line and bus parameters in the object
         self.bus_data = bus_parameters
         self.line_data = line_parameters
@@ -71,8 +73,6 @@ class PowerFlowNetwork:
         # Parse bus parameters
         self.init_bus_data()
 
-        # Todo: init line data
-
         # Solve:
         if mode == "newton":
             self.newton_raphson_solver()
@@ -119,6 +119,12 @@ class PowerFlowNetwork:
         return y_to_gnd
 
     def init_bus_data(self):
+        if self.mode == "newton":
+            div_by_power = 1
+            div_newton_only = self.basePower
+        else:
+            div_by_power = self.basePower
+            div_newton_only = 1
         # Prepare for numeric calculation by reading all inputs in the correct format.
 
         # Find voltage, real and imaginary power, and total power in complex units
@@ -131,13 +137,13 @@ class PowerFlowNetwork:
             self.delta[n] = (np.pi / 180) * self.delta_degrees[n]  # Convert to radians
 
             # All power units in p.u
-            self.P_load[n] = self.bus_data[k, 4] / self.basePower
-            self.Q_load[n] = self.bus_data[k, 5] / self.basePower
-            self.P_gen[n] = self.bus_data[k, 6] / self.basePower
-            self.Q_gen[n] = self.bus_data[k, 7] / self.basePower
-            self.Q_min[n] = self.bus_data[k, 8] / self.basePower
-            self.Q_max[n] = self.bus_data[k, 9] / self.basePower
-            self.Q_shunt[n] = self.bus_data[k, 10] / self.basePower
+            self.P_load[n] = self.bus_data[k, 4] / div_by_power
+            self.Q_load[n] = self.bus_data[k, 5] / div_by_power
+            self.P_gen[n] = self.bus_data[k, 6] / div_by_power
+            self.Q_gen[n] = self.bus_data[k, 7] / div_by_power
+            self.Q_min[n] = self.bus_data[k, 8] / div_by_power
+            self.Q_max[n] = self.bus_data[k, 9] / div_by_power
+            self.Q_shunt[n] = self.bus_data[k, 10] / div_by_power
 
             # Override(!) bus parameters based on type (load, slack, gen)
             if self.bus_type[n] == 0:  # Load
@@ -153,8 +159,8 @@ class PowerFlowNetwork:
                 exit("Wrong bus type in input")
 
             self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
-            self.P[n] = (self.P_gen[n] - self.P_load[n])
-            self.Q[n] = (self.Q_gen[n] - (self.Q_load[n] - self.Q_shunt[n]))
+            self.P[n] = (self.P_gen[n] - self.P_load[n]) / div_newton_only
+            self.Q[n] = (self.Q_gen[n] - (self.Q_load[n] - self.Q_shunt[n])) / div_newton_only
             self.S[n] = self.P[n] + 1j * self.Q[n]
 
     def newton_raphson_solver(self):
@@ -280,7 +286,7 @@ class PowerFlowNetwork:
 
         if converge == 1:
             print(f"Solution converged after {iteration} iterations!")
-            self.V = self.V_mag * (np.cos(self.delta) + 1j *  np.sin(self.delta))
+            self.V = self.V_mag * (np.cos(self.delta) + 1j * np.sin(self.delta))
             self.delta_degrees = (180 / np.pi) * self.delta
 
             k = 0
@@ -311,8 +317,10 @@ class PowerFlowNetwork:
             for n in range(0, int(self.nbus)):
                 if self.bus_type[n] == 1:  # Slack bus
                     continue
+
                 elif self.bus_type[n] == 0:  # Only load
                     self.V[n] = self.calc_v(n)
+
                 elif self.bus_type[n] == 2:  # Generator and Load (known voltage)
                     self.Q[n] = -1 * np.imag(np.conj(self.V[n]) * self.calc_current(n))
                     self.S[n] = self.P[n] + 1j * self.Q[n]
