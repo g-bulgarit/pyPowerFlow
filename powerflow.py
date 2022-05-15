@@ -324,7 +324,12 @@ class PowerFlowNetwork:
             self.convergenceDeltas.append(max_error)
 
         if max_error < self.accuracy:
+            print(f"Finished in {iteration} iterations")
             self.converge = 1
+        else:
+            print(f"Did not converge after {iteration} iterations")
+            self.converge = 0
+
         # Find other parameters from voltage and other known param
         for bus_idx in range(0, int(self.nbus)):
             self.V_mag[bus_idx] = np.abs(self.V[bus_idx])
@@ -349,6 +354,11 @@ class PowerFlowNetwork:
         self.P_load_total = np.sum(self.P_load)
         self.Q_load_total = np.sum(self.Q_load)
         self.Q_shunt_total = np.sum(self.Q_shunt)
+
+        # Housekeeping
+        self.V_mag = np.abs(self.V)
+        self.delta = np.angle(self.V)
+        self.delta_degrees = (180 / np.pi) * self.delta
 
     def calculate_losses(self):
         # Calculate power loss on each line
@@ -462,6 +472,8 @@ class PowerFlowNetwork:
         in pu
         :return:
         """
+        if not self.converge:
+            return
         plt.figure()
         plt.plot(self.convergenceDeltas, label="Delta")
         plt.title("Convergence Graph: Newton-Raphson")
