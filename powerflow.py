@@ -53,15 +53,12 @@ class PowerFlowNetwork:
         self.Q_min = np.zeros(int(self.nbus))
         self.Q_max = np.zeros(int(self.nbus))
         self.Q_shunt = np.zeros(int(self.nbus))
-        self.P_geng = np.zeros(int(self.nbus))
-        self.Q_geng = np.zeros(int(self.nbus))
         self.num_gen_seen = np.zeros(int(self.nbus))
         self.num_slack_seen = np.zeros(int(self.nbus))
         self.num_slack = 0
         self.num_gen = 0
         self.nload = 0
         self.delta_degrees = np.zeros(int(self.nbus))
-        self.y_load = np.zeros(int(self.nbus), dtype=np.complex128)
         self.P_gen_total = 0
         self.Q_gen_total = 0
         self.P_load_total = 0
@@ -77,7 +74,7 @@ class PowerFlowNetwork:
         # Solve:
         if mode == "newton":
             self.newton_raphson_solver()
-        elif mode == "gauss":  # TODO: Add gauss - check
+        elif mode == "gauss":
             self.gauss_solver()
         self.calculate_line_flow()
 
@@ -101,6 +98,7 @@ class PowerFlowNetwork:
             for line_idx in range(0, int(self.nlines)):
                 if (self.line_left[line_idx] - 1) == bus_idx:
                     ybus[bus_idx, bus_idx] += self.y[line_idx] + self.B_c[line_idx]
+
                 elif (self.line_right[line_idx] - 1) == bus_idx:
                     ybus[bus_idx, bus_idx] += self.y[line_idx] + self.B_c[line_idx]
                 else:
@@ -287,10 +285,6 @@ class PowerFlowNetwork:
                     self.S[n] = self.P[n] + 1j * self.Q[n]
                     self.P_gen[n] = self.P[n] * self.basePower + self.P_load[n]
                     self.Q_gen[n] = self.Q[n] * self.basePower + self.Q_load[n] - self.Q_shunt[n]
-                    self.P_geng[k] = self.P_gen[n]
-                    self.Q_geng[k] = self.Q_gen[n]
-                self.y_load[n] = (self.P_load[n] - (1j * self.Q_load[n]) + (1j * self.Q_shunt[n])) / (
-                        self.basePower * (self.V_mag[n] ** 2))
             self.bus_data[:, 2] = self.V_mag.T
             self.bus_data[:, 3] = self.delta_degrees.T
             self.P_gen_total = np.sum(self.P_gen)
@@ -340,6 +334,12 @@ class PowerFlowNetwork:
 
             elif self.bus_type[bus_idx] == 2:  # Load and generator (P is given)
                 self.Q_gen[bus_idx] = self.Q[bus_idx] + self.Q_load[bus_idx] - self.Q_shunt[bus_idx]
+
+        self.P_gen_total = np.sum(self.P_gen)
+        self.Q_gen_total = np.sum(self.Q_gen)
+        self.P_load_total = np.sum(self.P_load)
+        self.Q_load_total = np.sum(self.Q_load)
+        self.Q_shunt_total = np.sum(self.Q_shunt)
 
     def calc_v(self, bus_idx: int):
         denominator = self.ybus[bus_idx, bus_idx]
@@ -525,8 +525,8 @@ class PowerFlowNetwork:
                   f"Total Generated Power: {self.P_gen_total:.3f}[MW], {self.Q_gen_total:.3f}[MVAR], "
                   f"With Capacitors: {self.Q_shunt_total:.3f}[MVAR]")
             print(
-                f"Difference of {self.P_gen_total - self.P_load_total:.3f}[MW] between generated and dissipated power.\n"
-                f"Relative Error is {(self.P_gen_total - self.P_load_total) * 100 / self.P_gen_total:.3f}%")
+                f"Difference of {self.P_gen_total - self.P_load_total:.3f}[MW] "
+                f"between generated and dissipated power.\n")
 
     def print_line_currents(self):
         if not self.converge:
