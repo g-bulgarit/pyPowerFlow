@@ -126,13 +126,15 @@ class PowerFlowNetwork:
             self.V_mag[n] = self.bus_data[k, 2]
             self.delta_degrees[n] = self.bus_data[k, 3]            # Phasor angle (in degrees)
             self.delta[n] = (np.pi / 180) * self.delta_degrees[n]  # Convert to radians
-            self.P_load[n] = self.bus_data[k, 4]
-            self.Q_load[n] = self.bus_data[k, 5]
-            self.P_gen[n] = self.bus_data[k, 6]
-            self.Q_gen[n] = self.bus_data[k, 7]
-            self.Q_min[n] = self.bus_data[k, 8]
-            self.Q_max[n] = self.bus_data[k, 9]
-            self.Q_shunt[n] = self.bus_data[k, 10]
+
+            # All power units in p.u
+            self.P_load[n] = self.bus_data[k, 4] / self.basePower
+            self.Q_load[n] = self.bus_data[k, 5] / self.basePower
+            self.P_gen[n] = self.bus_data[k, 6] / self.basePower
+            self.Q_gen[n] = self.bus_data[k, 7] / self.basePower
+            self.Q_min[n] = self.bus_data[k, 8] / self.basePower
+            self.Q_max[n] = self.bus_data[k, 9] / self.basePower
+            self.Q_shunt[n] = self.bus_data[k, 10] / self.basePower
 
             # Override(!) bus parameters based on type (load, slack, gen)
             if self.bus_type[n] == 0:  # Load
@@ -141,15 +143,15 @@ class PowerFlowNetwork:
             elif self.bus_type[n] == 1:  # Slack
                 self.P_gen[n] = 0
                 self.Q_gen[n] = 0
-            elif self.bus_type[n] == 2:  # Generator
+            elif self.bus_type[n] == 2:  # Generator and Load
                 self.delta[n] = 0
                 self.Q_gen[n] = 0
             else:
                 exit("Wrong bus type in input")
 
             self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
-            self.P[n] = (self.P_gen[n] - self.P_load[n]) / self.basePower
-            self.Q[n] = (self.Q_gen[n] - (self.Q_load[n] - self.Q_shunt[n])) / self.basePower
+            self.P[n] = (self.P_gen[n] - self.P_load[n])
+            self.Q[n] = (self.Q_gen[n] - (self.Q_load[n] - self.Q_shunt[n]))
             self.S[n] = self.P[n] + 1j * self.Q[n]
 
     def newton_raphson_solver(self):
