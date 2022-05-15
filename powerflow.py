@@ -27,7 +27,7 @@ class PowerFlowNetwork:
         self.nlines = len(line_parameters[:, 1])
 
         # Parse bus parameters
-        self.nbus = np.max(bus_parameters[:, 0])
+        self.nbus = int(np.max(bus_parameters[:, 0]))
 
         # Calculate admittances and impedances
         self.Z = self.R + 1j * self.X
@@ -65,6 +65,8 @@ class PowerFlowNetwork:
         self.Q_load_total = 0
         self.Q_shunt_total = 0
         self.linepq = dict()
+        self.lineCurrentMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
+        self.linePowerMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
 
         # Parse bus parameters
         self.init_bus_data()
@@ -76,6 +78,7 @@ class PowerFlowNetwork:
             self.newton_raphson_solver()
         elif mode == "gauss":
             self.gauss_solver()
+            self.calculate_losses()
         self.calculate_line_flow()
 
     def calculate_admittance_matrix(self) -> np.ndarray:
@@ -340,11 +343,30 @@ class PowerFlowNetwork:
             elif self.bus_type[bus_idx] == 2:  # Load and generator (P is given)
                 self.Q_gen[bus_idx] = self.Q[bus_idx] + self.Q_load[bus_idx] - self.Q_shunt[bus_idx]
 
+        # Calculate total power
         self.P_gen_total = np.sum(self.P_gen)
         self.Q_gen_total = np.sum(self.Q_gen)
         self.P_load_total = np.sum(self.P_load)
         self.Q_load_total = np.sum(self.Q_load)
         self.Q_shunt_total = np.sum(self.Q_shunt)
+
+    def calculate_losses(self):
+        # Calculate power loss on each line
+        # Calculate currents
+        for i in range(self.nbus):
+            for j in range(self.nbus):
+                if i == j or self.ybus[i, j] == 0:
+                    continue
+                self.lineCurrentMatrix[i, j] = -self.ybus[i, j] * (self.V[i] - self.V[j]) + self.y_to_gnd[i] * self.V[i]
+
+        # Calculate line power losses
+        for i in range(self.nbus):
+            for j in range(self.nbus):
+                if i == j:
+                    continue
+                s_ij = self.V[i] * np.conj(self.lineCurrentMatrix[i, j])
+                s_ji = self.V[j] * np.conj(self.lineCurrentMatrix[j, i])
+                self.linePowerMatrix[i, j] = s_ij + s_ji
 
     def calc_v(self, bus_idx: int):
         denominator = self.ybus[bus_idx, bus_idx]
