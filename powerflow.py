@@ -291,11 +291,18 @@ class PowerFlowNetwork:
 
             k = 0
             for n in range(0, int(self.nbus)):
-                if self.bus_type[n] == 1:
+                if self.bus_type[n] == 0:  # Load
+                    continue
+
+                elif self.bus_type[n] == 1:  # Slack Bus
                     k += 1
                     self.S[n] = self.P[n] + 1j * self.Q[n]
                     self.P_gen[n] = self.P[n] * self.basePower + self.P_load[n]
                     self.Q_gen[n] = self.Q[n] * self.basePower + self.Q_load[n] - self.Q_shunt[n]
+
+                elif self.bus_type[n] == 2:  # Generator and Load
+                    self.Q_gen[n] = self.Q[n] * self.basePower + self.Q_load[n] - self.Q_shunt[n]
+
             self.bus_data[:, 2] = self.V_mag.T
             self.bus_data[:, 3] = self.delta_degrees.T
             self.P_gen_total = np.sum(self.P_gen)
