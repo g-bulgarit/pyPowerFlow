@@ -297,12 +297,12 @@ class PowerFlowNetwork:
 
     def gauss_solver(self):
         max_error = 1
-        converge = 1
-        # Todo add convergence
+        converge = 0  # Flag
         iteration = 0
 
         # Start iterating over solution
         while max_error >= self.accuracy and iteration <= self.maximumIterations:
+            v_previous = np.copy(self.V)
             iteration += 1
             # Iteratively find the voltages in all busses
             for n in range(0, int(self.nbus)):
@@ -316,9 +316,12 @@ class PowerFlowNetwork:
                     V_imag = np.imag(self.calc_v(n))
                     V_real = np.sqrt(np.square(self.V_mag[n]) - np.square(V_imag))
                     self.V[n] = V_real + 1j * V_imag
-                    # delta = 1
-                    # self.convergenceDeltas.append(delta)
 
+            max_error = np.max(np.abs(self.V - v_previous))
+            self.convergenceDeltas.append(max_error)
+
+        if max_error < self.accuracy:
+            self.converge = 1
         # Find other parameters from voltage and other known param
         for bus_idx in range(0, int(self.nbus)):
             self.V_mag[bus_idx] = np.abs(self.V[bus_idx])
