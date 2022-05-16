@@ -489,11 +489,19 @@ class PowerFlowNetwork:
         """
         if not self.converge:
             return
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+            unit_text = "power"
+        else:
+            mode_text = "Gauss-Seidel"
+            unit_text = "voltage"
+
         plt.figure()
         plt.plot(self.convergenceDeltas, label="Delta")
-        plt.title("Convergence Graph: Newton-Raphson")
+        plt.title(f"Convergence Graph: {mode_text}")
         plt.xlabel("Iteration Number [#]")
-        plt.ylabel("Max difference of power between iterations")
+        plt.ylabel(f"Max difference of {unit_text} between iterations")
         plt.legend()
 
     def plot_voltages(self, pu=True, minimum_voltage=0.97):
