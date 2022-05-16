@@ -564,6 +564,7 @@ class PowerFlowNetwork:
         plt.title("Network Graph: Busses and Lines")
         nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
                 node_size=280, node_shape='o', edgecolors="black", font_color="white")
+        nx.draw_networkx_edges(graph, pos=layout_pos, arrows=True)
         if label_edges:
             nx.draw_networkx_edge_labels(graph, pos=layout_pos, edge_labels=edge_labels, rotate=False,
                                          font_size=6, verticalalignment="center_baseline", alpha=0.5)
