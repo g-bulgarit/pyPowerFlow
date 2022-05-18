@@ -4,8 +4,10 @@ import networkx as nx
 
 
 class PowerFlowNetwork:
-    def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations, mode="gauss"):
+    def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations,
+                 mode="gauss", policy="clamp"):
         self.mode = mode
+        self.policy = policy
         self.delta_from_polar = False
 
         # Keep line and bus parameters in the object
@@ -333,14 +335,28 @@ class PowerFlowNetwork:
 
                 elif self.bus_type[n] == 2:  # Generator and Load (known voltage)
                     self.Q[n] = -1 * np.imag(np.conj(self.V[n]) * self.calc_current(n))
-                    # Clamp generator MVAR values to min or max if exceeding:
                     self.Q_gen[n] = self.Q[n] + self.Q_load[n] - self.Q_shunt[n]
 
-                    if self.Q_gen[n] < self.Q_min[n]:
-                        # Unrealistic - does not fit physical system constraint
-                        self.Q[n] = self.Q_min[n] - (self.Q_load[n] - self.Q_shunt[n])  # Set to minimum instead.
-                    elif self.Q_gen[n] > self.Q_max[n]:
-                        self.Q[n] = self.Q_max[n] - (self.Q_load[n] - self.Q_shunt[n]) # Set to maximum instead.
+                    # Decide how to handle Qmin and Qmax:
+                    #   - Clamp Q to nearest extrema
+                    #   - Change voltage magnitude (like "tap changer") until Q is ok
+                    if self.policy == "clamp":
+                        self.Q_gen[n] = self.Q[n] + self.Q_load[n] - self.Q_shunt[n]
+                        # Clamp generator MVAR values to min or max if exceeding:
+                        if self.Q_gen[n] < self.Q_min[n]:
+                            # Unrealistic - does not fit physical system constraint
+                            self.Q[n] = self.Q_min[n] - (self.Q_load[n] - self.Q_shunt[n])  # Set to minimum instead.
+                        elif self.Q_gen[n] > self.Q_max[n]:
+                            self.Q[n] = self.Q_max[n] - (self.Q_load[n] - self.Q_shunt[n])  # Set to maximum instead.
+                    else:
+                        # Change V_mag to stay withing Q lim
+                        if self.Q_gen[n] < self.Q_min[n] and iteration >= 0:
+                            # Unrealistic - does not fit physical system constraint
+                            self.V_mag[n] += 0.005
+                            self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
+                        elif self.Q_gen[n] > self.Q_max[n] and iteration >= 0:
+                            self.V_mag[n] -= 0.005
+                            self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
 
                     self.S[n] = self.P[n] + 1j * self.Q[n]
 
