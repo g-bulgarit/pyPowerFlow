@@ -4,7 +4,7 @@ import networkx as nx
 
 
 class PowerFlowNetwork:
-    def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations, mode="newton"):
+    def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations, mode="gauss"):
         self.mode = mode
         self.delta_from_polar = False
 
@@ -19,7 +19,8 @@ class PowerFlowNetwork:
 
         # Parse general parameters
         self.basePower = base_power
-        self.current = dict()
+        self.lineCurrents = dict()
+        self.linePowerLosses = dict()
 
         # Parse line parameters into arrays
         self.line_left = line_parameters[:, 0]
@@ -70,6 +71,7 @@ class PowerFlowNetwork:
         self.linepq = dict()
         self.lineCurrentMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
         self.linePowerMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
+        self.currentFlowDirection = np.zeros((int(self.nbus), int(self.nbus)))
 
         # Parse bus parameters
         self.init_bus_data()
@@ -77,10 +79,10 @@ class PowerFlowNetwork:
         # Solve:
         if mode == "newton":
             self.newton_raphson_solver()
+            self.calculate_line_flow()
         elif mode == "gauss":
             self.gauss_solver()
             self.calculate_losses()
-        self.calculate_line_flow()
 
     def calculate_admittance_matrix(self) -> np.ndarray:
         """
@@ -399,16 +401,21 @@ class PowerFlowNetwork:
             for j in range(self.nbus):
                 if i == j or self.ybus[i, j] == 0:
                     continue
-                self.lineCurrentMatrix[i, j] = -self.ybus[i, j] * (self.V[i] - self.V[j]) + self.y_to_gnd[i] * self.V[i]
+                line_current = -self.ybus[i, j] * (self.V[i] - self.V[j])
+                current_to_gnd = self.y_to_gnd[i] * self.V[i]
+                self.lineCurrentMatrix[i, j] = line_current + current_to_gnd
+                self.lineCurrents[(i, j)] = line_current
 
         # Calculate line power losses
         for i in range(self.nbus):
             for j in range(self.nbus):
-                if i == j:
+                if i == j or self.ybus[i, j] == 0:
                     continue
                 s_ij = self.V[i] * np.conj(self.lineCurrentMatrix[i, j])
                 s_ji = self.V[j] * np.conj(self.lineCurrentMatrix[j, i])
+                self.currentFlowDirection[(i, j)] = 1 if (np.real(s_ij) - np.real(s_ji) > 0) else -1
                 self.linePowerMatrix[i, j] = s_ij + s_ji
+                self.linePowerLosses[(i, j)] = self.linePowerMatrix[i, j]
 
     def calc_v(self, bus_idx: int):
         denominator = self.ybus[bus_idx, bus_idx]
@@ -435,7 +442,7 @@ class PowerFlowNetwork:
         if not self.converge:
             return
         slt = 0
-        outlines = ["From, To, MW, MVAR, MVA, MW Loss, MVAR Loss, Tap\n"]
+        outlines = ["From, To, MW, MVAR, MVA, MW Loss, MVAR Loss\n"]
 
         for n in range(0, int(self.nbus)):
             bus_body = 0
@@ -456,7 +463,7 @@ class PowerFlowNetwork:
                     s_kn = self.V[k] * np.conj(i_k) * self.basePower
                     sl = s_nk + s_kn
                     slt += s_nk + s_kn
-                    self.current[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
+                    self.lineCurrents[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
 
                 elif self.line_right[l] - 1 == n:
                     # Do calculation
@@ -470,7 +477,7 @@ class PowerFlowNetwork:
                     sl = s_nk + s_kn
 
                     # calculate current also
-                    self.current[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
+                    self.lineCurrents[(n, k)] = np.conj(sl / self.basePower) / np.conj(self.V[n] - self.V[k])  # TODO
                     slt += s_nk + s_kn
 
                 if self.line_left[l] - 1 == n or self.line_right[l] - 1 == n:
@@ -481,7 +488,7 @@ class PowerFlowNetwork:
                     outlines.append(out_str)
                 self.linepq[(n, l)] = [np.real(s_nk), np.imag(s_nk)]
 
-        pairs = list(self.current.keys())
+        pairs = list(self.lineCurrents.keys())
 
         for idx in range(int(self.nbus)):
             outbound_current = 0
@@ -489,10 +496,10 @@ class PowerFlowNetwork:
             for pair in pairs:
                 if pair[0] == idx:
                     # this is an outbound connection
-                    outbound_current += self.current[pair]
+                    outbound_current += self.lineCurrents[pair]
                 if pair[1] == idx:
                     # this is an inbound connection
-                    inbound_current += self.current[pair]
+                    inbound_current += self.lineCurrents[pair]
             print(f"Node: {idx + 1}, In: {inbound_current}, Out: {outbound_current}, "
                   f"Delta: {outbound_current + inbound_current}")
 
@@ -545,6 +552,24 @@ class PowerFlowNetwork:
         plt.xlabel("Bus Number [#]")
         plt.axhline(y=minimum_voltage, color='r', linestyle='--')
 
+    def plot_voltage_angles(self):
+        if not self.converge:
+            return
+
+        plt.figure()
+        degree_vector = self.delta_degrees
+        plt.ylabel("Angle [deg]")
+
+        x_axis = list(range(1, degree_vector.size + 1))
+        plt.title("Network Angle Distribution")
+        for idx, _ in enumerate(degree_vector):
+            plt.scatter(x_axis[idx], degree_vector[idx])
+            plt.annotate(idx + 1, (x_axis[idx], degree_vector[idx]))
+
+        plt.grid(visible=True, which="both", axis="y")
+        plt.minorticks_on()
+        plt.xlabel("Bus Number [#]")
+
     def plot_network_graph(self, minimum_voltage_pu=0.97, label_edges=False):
         if not self.converge:
             return
@@ -558,7 +583,7 @@ class PowerFlowNetwork:
         for i in range(int(self.nbus)):
             # Create this bus as a node on the graph
             graph.add_node(i)
-            labels[i] = i + 1
+            labels[i] = f"{i+1}\n{round(self.delta_degrees[i], 2)}" # (i + 1, round(self.delta_degrees[i], 2))
             if i == 0:
                 colors.append("blue")
             elif voltages[i] > minimum_voltage_pu:
@@ -570,17 +595,23 @@ class PowerFlowNetwork:
         for row in self.line_data:
             start_point = int(row[0]) - 1
             end_point = int(row[1]) - 1
-            graph.add_edge(start_point, end_point)
+            if self.currentFlowDirection[start_point, end_point] == 1:
+                graph.add_edge(start_point, end_point)
+            else:
+                graph.add_edge(end_point, start_point)
+
+            # graph.add_edge(start_point, end_point)
             if label_edges:
                 edge_labels[(start_point, end_point)] = f"{self.linepq[(start_point, end_point)][0]:.1f}[MW], " \
                                                         f"{self.linepq[(start_point, end_point)][1]:.1f}[MVAR]"
 
         # layout_pos = nx.planar_layout(graph, scale=4)
-        layout_pos = nx.spring_layout(graph, k=3)
+        # layout_pos = nx.spectral_layout(graph, weight=None)
+        layout_pos = nx.spring_layout(graph, k=8)
         plt.title("Network Graph: Busses and Lines")
         nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
-                node_size=280, node_shape='o', edgecolors="black", font_color="white")
-        nx.draw_networkx_edges(graph, pos=layout_pos, arrows=True)
+                node_size=700, node_shape='o', edgecolors="black", font_color="white", font_size=10)
+        nx.draw_networkx_edges(graph, pos=layout_pos, arrows=True, arrowsize=25)
         if label_edges:
             nx.draw_networkx_edge_labels(graph, pos=layout_pos, edge_labels=edge_labels, rotate=False,
                                          font_size=6, verticalalignment="center_baseline", alpha=0.5)
@@ -604,14 +635,14 @@ class PowerFlowNetwork:
                   f"Total Generated Power: {self.P_gen_total:.3f}[MW], {self.Q_gen_total:.3f}[MVAR], "
                   f"With Capacitors: {self.Q_shunt_total:.3f}[MVAR]")
             print(
-                f"Difference of {self.P_gen_total - self.P_load_total:.3f}[MW] "
+                f"Difference of {(self.P_gen_total - self.P_load_total):.3f}[MW] "
                 f"between generated and dissipated power.\n")
 
     def print_line_currents(self):
         if not self.converge:
             return
 
-        for pair in list(self.current.keys()):
-            abs_current = np.abs(self.current[pair])
-            phase_current = np.angle(self.current[pair])
-            print(f"{pair[0] + 1} -> {pair[1] + 1}: {abs_current}[A, pu] with angle {phase_current}[rad?]")
+        for pair in list(self.lineCurrents.keys()):
+            abs_current = np.abs(self.lineCurrents[pair])
+            phase_current = np.rad2deg(np.angle(self.lineCurrents[pair]))
+            print(f"Current from {pair[0] + 1} -> {pair[1] + 1}:\t{abs_current:.3f} ∠ {phase_current:.3f}[pu]")
