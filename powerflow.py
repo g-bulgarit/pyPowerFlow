@@ -6,6 +6,7 @@ import networkx as nx
 class PowerFlowNetwork:
     def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations, mode="newton"):
         self.mode = mode
+        self.delta_from_polar = False
 
         # Keep line and bus parameters in the object
         self.bus_data = bus_parameters
@@ -330,10 +331,26 @@ class PowerFlowNetwork:
 
                 elif self.bus_type[n] == 2:  # Generator and Load (known voltage)
                     self.Q[n] = -1 * np.imag(np.conj(self.V[n]) * self.calc_current(n))
+                    # Clamp generator MVAR values to min or max if exceeding:
+                    self.Q_gen[n] = self.Q[n] + self.Q_load[n] - self.Q_shunt[n]
+
+                    if self.Q_gen[n] < self.Q_min[n]:
+                        # Unrealistic - does not fit physical system constraint
+                        self.Q[n] = self.Q_min[n] - (self.Q_load[n] - self.Q_shunt[n])  # Set to minimum instead.
+                    elif self.Q_gen[n] > self.Q_max[n]:
+                        self.Q[n] = self.Q_max[n] - (self.Q_load[n] - self.Q_shunt[n]) # Set to maximum instead.
+
                     self.S[n] = self.P[n] + 1j * self.Q[n]
-                    V_imag = np.imag(self.calc_v(n))
-                    V_real = np.sqrt(np.square(self.V_mag[n]) - np.square(V_imag))
-                    self.V[n] = V_real + 1j * V_imag
+
+                    if self.delta_from_polar:  # Choose a method for angle calculation
+                        tmp_v = self.calc_v(n)
+                        self.delta[n] = np.angle(tmp_v)
+                        # Take only the angle (we know V_magnitude)
+                        self.V[n] = self.V_mag[n] * (np.cos(self.delta[n]) + 1j * np.sin(self.delta[n]))
+                    else:
+                        V_imag = np.imag(self.calc_v(n))
+                        V_real = np.sqrt(np.square(self.V_mag[n]) - np.square(V_imag))
+                        self.V[n] = V_real + 1j * V_imag
 
             max_error = np.max(np.abs(self.V - v_previous))
             self.convergenceDeltas.append(max_error)
@@ -489,7 +506,6 @@ class PowerFlowNetwork:
         """
         if not self.converge:
             return
-
         if self.mode == "newton":
             mode_text = "Newton-Raphson"
             unit_text = "power"
