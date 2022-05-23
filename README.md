@@ -6,8 +6,8 @@ Python tool to solve power flow problems in power networks using numeric methods
 * Gauss-Seidel
 
 ## **Supported Generator Policies**
-* "Tap-Changer": Play with voltages of busses that have generators on them, such that the reactive power $Q_{generator}$ stays within the realm of $Q_{min} \leq Q_{generator} \leq Q_{max}$.
-* "Clamp": Keep the voltages of busses with generators on them **constant**, and clamp $Q_{generator}$ to the closest of $\{Q_{min}, Q_{max}\}$.
+* "Tap-Changer": Play with voltages of busses that have generators on them, such that the reactive power `Q_gen` stays within the realm of `Q_min` and `Q_max`.
+* "Clamp": Keep the voltages of busses with generators on them **constant**, and clamp `Q_gen` to the closest of {`Q_min`, `Q_max`}.
 
 ## **Note**
 Code adapted from **Hadi Sa'adat's** MATLAB toolbox, published along with his book **Power System Analysis, third edition, McGraw-Hill, 1999**.
