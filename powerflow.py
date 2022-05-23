@@ -2,13 +2,18 @@ import numpy as np
 from matplotlib import pyplot as plt
 import networkx as nx
 
-
 class PowerFlowNetwork:
     def __init__(self, bus_parameters, line_parameters, base_power, accuracy, max_iterations,
-                 mode="gauss", policy="clamp"):
+                 mode="gauss", policy="clamp", bus_csv_name="bus_output.csv", line_csv_name="line_output.csv"):
+
+        # Save modes
         self.mode = mode
         self.policy = policy
         self.delta_from_polar = False
+
+        # Save names
+        self.bus_csv_filename = bus_csv_name
+        self.line_csv_filename = line_csv_name
 
         # Keep line and bus parameters in the object
         self.bus_data = bus_parameters
