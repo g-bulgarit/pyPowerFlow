@@ -551,6 +551,12 @@ class PowerFlowNetwork:
     def plot_voltages(self, pu=True, minimum_voltage=0.97):
         if not self.converge:
             return
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
         plt.figure()
         voltages_pu = np.abs(self.V)
         plt.ylabel("Voltage [pu]")
@@ -560,7 +566,7 @@ class PowerFlowNetwork:
             plt.ylabel("Voltage [V]")
 
         x_axis = list(range(1, voltages_pu.size + 1))
-        plt.title("Network Voltage Distribution")
+        plt.title(f"Network Voltage Distribution: {mode_text}")
         for idx, _ in enumerate(voltages_pu):
             if voltages_pu[idx] < minimum_voltage:
                 color = "r"
@@ -577,12 +583,17 @@ class PowerFlowNetwork:
         if not self.converge:
             return
 
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
         plt.figure()
         degree_vector = self.delta_degrees
         plt.ylabel("Angle [deg]")
 
         x_axis = list(range(1, degree_vector.size + 1))
-        plt.title("Network Angle Distribution")
+        plt.title(f"Network Angle Distribution: {mode_text}")
         for idx, _ in enumerate(degree_vector):
             plt.scatter(x_axis[idx], degree_vector[idx])
             plt.annotate(idx + 1, (x_axis[idx], degree_vector[idx]))
@@ -594,6 +605,42 @@ class PowerFlowNetwork:
     def plot_network_graph(self, minimum_voltage_pu=0.97, label_edges=False):
         if not self.converge:
             return
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
+        if self.mode == "newton":
+            mode_text = "Newton-Raphson"
+        else:
+            mode_text = "Gauss-Seidel"
+
         plt.figure()
         graph = nx.DiGraph()
         voltages = np.abs(self.V)
@@ -629,7 +676,7 @@ class PowerFlowNetwork:
         # layout_pos = nx.planar_layout(graph, scale=4)
         # layout_pos = nx.spectral_layout(graph, weight=None)
         layout_pos = nx.spring_layout(graph, k=8)
-        plt.title("Network Graph: Busses and Lines")
+        plt.title(f"Network Graph: Busses and Lines - {mode_text}")
         nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
                 node_size=700, node_shape='o', edgecolors="black", font_color="white", font_size=10)
         nx.draw_networkx_edges(graph, pos=layout_pos, arrows=True, arrowsize=25)
