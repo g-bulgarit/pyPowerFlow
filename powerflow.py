@@ -87,9 +87,11 @@ class PowerFlowNetwork:
         if mode == "newton":
             self.newton_raphson_solver()
             self.calculate_line_flow()
+            self.calculate_losses(save_file=False) # bugfix
         elif mode == "gauss":
             self.gauss_solver()
             self.calculate_losses()
+            self.calculate_line_flow()
 
     def calculate_admittance_matrix(self) -> np.ndarray:
         """
@@ -415,9 +417,10 @@ class PowerFlowNetwork:
         self.delta = np.angle(self.V)
         self.delta_degrees = (180 / np.pi) * self.delta
 
-    def calculate_losses(self):
+    def calculate_losses(self, save_file=True):
         # Calculate power loss on each line
-        # Calculate currents
+
+        # Start by calculating currents
         for i in range(self.nbus):
             for j in range(self.nbus):
                 if i == j or self.ybus[i, j] == 0:
@@ -437,6 +440,37 @@ class PowerFlowNetwork:
                 self.currentFlowDirection[(i, j)] = 1 if (np.real(s_ij) - np.real(s_ji) > 0) else -1
                 self.linePowerMatrix[i, j] = s_ij + s_ji
                 self.linePowerLosses[(i, j)] = self.linePowerMatrix[i, j]
+
+        if save_file:
+            outlines = ["From, To, MW, MVAR, MVA, MW Loss, MVAR Loss\n"]
+            for n in range(0, int(self.nbus)):
+                bus_body = 0
+                for l in range(0, int(self.nlines)):
+                    k = 0
+                    if not bus_body:
+                        # Print header for each new bus encountered
+                        outlines.append(
+                            f"{n + 1}, , {self.P[n] * self.basePower:.3f}, {self.Q[n] * self.basePower:.3f},"
+                            f" {np.abs(self.S[n] * self.basePower):.3f}\n")
+                        bus_body = 1
+
+                    if self.line_left[l] - 1 == n or self.line_right[l] - 1 == n:
+                        k = int(self.line_right[l]) - 1
+                        sl = self.linePowerMatrix[n, k] + self.linePowerMatrix[k, n]
+                        out_str = f" , {k + 1}, {np.real(np.real(self.linePowerMatrix[n, k]) * self.basePower):.3f}, " \
+                                  f"{np.imag(np.real(self.linePowerMatrix[n, k]))* self.basePower:.3f}, " \
+                                  f"{np.abs(np.real(self.linePowerMatrix[n, k]))* self.basePower:.3f}, " \
+                                  f"{np.real(sl):.3f}, {np.imag(sl)* self.basePower:.3f}\n"
+                        outlines.append(out_str)
+
+            try:
+                with open(self.line_csv_filename, "w+") as csv_out:
+                    csv_out.writelines(outlines)
+            except PermissionError as e:
+                raise PermissionError(f"==========================================================\n"
+                                      f"The output file is not open for writing.\n"
+                                      f"Perhaps you have the file open in Excel? please close it.\n"
+                                      f"Full error is: {e}")
 
     def calc_v(self, bus_idx: int):
         denominator = self.ybus[bus_idx, bus_idx]
@@ -509,23 +543,14 @@ class PowerFlowNetwork:
                     outlines.append(out_str)
                 self.linepq[(n, l)] = [np.real(s_nk), np.imag(s_nk)]
 
-        pairs = list(self.lineCurrents.keys())
-
-        for idx in range(int(self.nbus)):
-            outbound_current = 0
-            inbound_current = 0
-            for pair in pairs:
-                if pair[0] == idx:
-                    # this is an outbound connection
-                    outbound_current += self.lineCurrents[pair]
-                if pair[1] == idx:
-                    # this is an inbound connection
-                    inbound_current += self.lineCurrents[pair]
-            print(f"Node: {idx + 1}, In: {inbound_current}, Out: {outbound_current}, "
-                  f"Delta: {outbound_current + inbound_current}")
-
-        with open("line_outputs.csv", "w+") as csv_out:
-            csv_out.writelines(outlines)
+        try:
+            with open(self.line_csv_filename, "w+") as csv_out:
+                csv_out.writelines(outlines)
+        except PermissionError as e:
+            raise PermissionError(f"==========================================================\n"
+                                  f"The output file is not open for writing.\n"
+                                  f"Perhaps you have the file open in Excel? please close it.\n"
+                                  f"Full error is: {e}")
 
     def plot_convergence_graph(self):
         """
@@ -579,7 +604,7 @@ class PowerFlowNetwork:
         plt.xlabel("Bus Number [#]")
         plt.axhline(y=minimum_voltage, color='r', linestyle='--')
 
-    def plot_voltage_angles(self):
+    def plot_voltage_angles(self) -> None:
         if not self.converge:
             return
 
@@ -611,42 +636,13 @@ class PowerFlowNetwork:
         else:
             mode_text = "Gauss-Seidel"
 
-        if self.mode == "newton":
-            mode_text = "Newton-Raphson"
-        else:
-            mode_text = "Gauss-Seidel"
-
-        if self.mode == "newton":
-            mode_text = "Newton-Raphson"
-        else:
-            mode_text = "Gauss-Seidel"
-
-        if self.mode == "newton":
-            mode_text = "Newton-Raphson"
-        else:
-            mode_text = "Gauss-Seidel"
-
-        if self.mode == "newton":
-            mode_text = "Newton-Raphson"
-        else:
-            mode_text = "Gauss-Seidel"
-
-        if self.mode == "newton":
-            mode_text = "Newton-Raphson"
-        else:
-            mode_text = "Gauss-Seidel"
-
-        if self.mode == "newton":
-            mode_text = "Newton-Raphson"
-        else:
-            mode_text = "Gauss-Seidel"
-
         plt.figure()
         graph = nx.DiGraph()
         voltages = np.abs(self.V)
         colors = []
         labels = dict()
         edge_labels = dict()
+        powerMatrix = self.linePowerMatrix * 100
         # Add nodes
         for i in range(int(self.nbus)):
             # Create this bus as a node on the graph
@@ -670,8 +666,8 @@ class PowerFlowNetwork:
 
             # graph.add_edge(start_point, end_point)
             if label_edges:
-                edge_labels[(start_point, end_point)] = f"{self.linepq[(start_point, end_point)][0]:.1f}[MW], " \
-                                                        f"{self.linepq[(start_point, end_point)][1]:.1f}[MVAR]"
+                edge_labels[(start_point, end_point)] = f"{np.real(powerMatrix[start_point, end_point]):.1f}[MW], " \
+                                                        f"{np.imag(powerMatrix[start_point, end_point]):.1f}[MVAR]"
 
         # layout_pos = nx.planar_layout(graph, scale=4)
         # layout_pos = nx.spectral_layout(graph, weight=None)
@@ -693,8 +689,14 @@ class PowerFlowNetwork:
                             f"{self.P_load[i]:.3f}, {self.Q_load[i]:.3f}, {self.P_gen[i]:.3f},"
                             f"{self.Q_gen[i]:.3f}, {self.Q_shunt[i]:.3f}\n")
 
-        with open("bus_outputs.csv", "w+") as csvfile:
-            csvfile.writelines(outlines)
+        try:
+            with open(self.bus_csv_filename, "w+") as csv_out:
+                csv_out.writelines(outlines)
+        except PermissionError as e:
+            raise PermissionError(f"==========================================================\n"
+                                  f"The output file is not open for writing.\n"
+                                  f"Perhaps you have the file open in Excel? please close it.\n"
+                                  f"Full error is: {e}")
 
         if printout:
             [print(line) for line in outlines]
