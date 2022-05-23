@@ -2,8 +2,13 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from powerflow import PowerFlowNetwork
+
 bus_params = np.asarray(
-# Bus type: 1 Slack, 0: just load, 2: generator and load
+#        Convention for bus type:
+#        0: Just load on the bus
+#        1: Slack Bus
+#        2: Generator and load on the same bus
+#
 #        Bus Bus    Voltage Angle     ---Load----     -------Generator------    Static Mvar
 #        No  type   Mag.    Degree    MW     Mvar     MW     Mvar  Qmin  Qmax    +Qc/-Ql
         [1,   1,    1.025,    0.0,    51.0,  41.0,    0.0,   0.0,  0,    0,        4,
