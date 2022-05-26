@@ -76,6 +76,7 @@ class PowerFlowNetwork:
         self.Q_load_total = 0
         self.Q_shunt_total = 0
         self.linepq = dict()
+        self.capacitor_losses = 0
         self.lineCurrentMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
         self.linePowerMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
         self.currentFlowDirection = np.zeros((int(self.nbus), int(self.nbus)))
@@ -438,8 +439,15 @@ class PowerFlowNetwork:
                 s_ij = self.V[i] * np.conj(self.lineCurrentMatrix[i, j])
                 s_ji = self.V[j] * np.conj(self.lineCurrentMatrix[j, i])
                 self.currentFlowDirection[(i, j)] = 1 if (np.real(s_ij) - np.real(s_ji) > 0) else -1
-                self.linePowerMatrix[i, j] = s_ij + s_ji
+                # self.linePowerMatrix[i, j] = s_ij + s_ji
+                zline = (-1 / self.ybus[i, j])
+                self.linePowerMatrix[i, j] = (np.abs(self.lineCurrents[(i, j)]) ** 2) * zline
                 self.linePowerLosses[(i, j)] = self.linePowerMatrix[i, j]
+
+        for i in range(self.nbus):
+            # Calculate the losses on the capacitors in the entire system
+            self.capacitor_losses += np.imag(self.y_to_gnd[i]) * np.abs(self.V[i])**2
+        self.capacitor_losses *= self.basePower
 
         if save_file:
             outlines = ["From, To, MW, MVAR, MVA, MW Loss, MVAR Loss\n"]
