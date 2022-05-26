@@ -618,7 +618,7 @@ class PowerFlowNetwork:
         plt.ylabel("Angle [deg]")
 
         x_axis = list(range(1, degree_vector.size + 1))
-        plt.title(f"Network Angle Distribution: {mode_text}")
+        plt.title(f"Voltage Angle Distribution: {mode_text}")
         for idx, _ in enumerate(degree_vector):
             plt.scatter(x_axis[idx], degree_vector[idx])
             plt.annotate(idx + 1, (x_axis[idx], degree_vector[idx]))
