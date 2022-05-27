@@ -76,10 +76,12 @@ class PowerFlowNetwork:
         self.Q_load_total = 0
         self.Q_shunt_total = 0
         self.linepq = dict()
-        self.capacitor_losses = 0
+        self.capacitor_losses = np.zeros(int(self.nbus))
+        self.total_capacitor_losses = 0
         self.lineCurrentMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
         self.linePowerMatrix = np.zeros((int(self.nbus), int(self.nbus)), dtype=np.complex128)
         self.currentFlowDirection = np.zeros((int(self.nbus), int(self.nbus)))
+        self.current_to_gnd = np.zeros(int(self.nbus), dtype=np.complex128)
 
         # Parse bus parameters
         self.init_bus_data()
@@ -420,18 +422,18 @@ class PowerFlowNetwork:
 
     def calculate_losses(self, save_file=True):
         # Calculate power loss on each line
-
         # Start by calculating currents
         for i in range(self.nbus):
             for j in range(self.nbus):
                 if i == j or self.ybus[i, j] == 0:
                     continue
                 line_current = -self.ybus[i, j] * (self.V[i] - self.V[j])
-                current_to_gnd = self.y_to_gnd[i] * self.V[i]
-                self.lineCurrentMatrix[i, j] = line_current + current_to_gnd
+                self.current_to_gnd[i] = self.y_to_gnd[i] * self.V[i]
+                self.lineCurrentMatrix[i, j] = line_current + self.current_to_gnd[i]
                 self.lineCurrents[(i, j)] = line_current
 
         # Calculate line power losses
+        seen = []
         for i in range(self.nbus):
             for j in range(self.nbus):
                 if i == j or self.ybus[i, j] == 0:
@@ -442,12 +444,16 @@ class PowerFlowNetwork:
                 # self.linePowerMatrix[i, j] = s_ij + s_ji
                 zline = (-1 / self.ybus[i, j])
                 self.linePowerMatrix[i, j] = (np.abs(self.lineCurrents[(i, j)]) ** 2) * zline
-                self.linePowerLosses[(i, j)] = self.linePowerMatrix[i, j]
+
+                if (i, j) not in seen:
+                    self.linePowerLosses[(i, j)] = self.linePowerMatrix[i, j]
+                    seen.append((i, j))
+                    seen.append((j, i))
 
         for i in range(self.nbus):
             # Calculate the losses on the capacitors in the entire system
-            self.capacitor_losses += np.imag(self.y_to_gnd[i]) * np.abs(self.V[i])**2
-        self.capacitor_losses *= self.basePower
+            self.capacitor_losses[i] = np.imag(self.y_to_gnd[i]) * np.abs(self.V[i])**2
+        self.total_capacitor_losses = np.sum(self.capacitor_losses) * self.basePower
 
         if save_file:
             outlines = ["From, To, MW, MVAR, MVA, MW Loss, MVAR Loss\n"]
@@ -679,7 +685,7 @@ class PowerFlowNetwork:
 
         # layout_pos = nx.planar_layout(graph, scale=4)
         # layout_pos = nx.spectral_layout(graph, weight=None)
-        layout_pos = nx.spring_layout(graph, k=8)
+        layout_pos = nx.spring_layout(graph, k=124)
         plt.title(f"Network Graph: Busses and Lines - {mode_text}")
         nx.draw(graph, pos=layout_pos, labels=labels, with_labels=True, node_color=colors,
                 node_size=700, node_shape='o', edgecolors="black", font_color="white", font_size=10)
@@ -716,11 +722,51 @@ class PowerFlowNetwork:
                 f"Difference of {(self.P_gen_total - self.P_load_total):.3f}[MW] "
                 f"between generated and dissipated power.\n")
 
+    def print_line_losses(self):
+        if not self.converge:
+            return
+
+        with open("line_loss.csv", "w+") as csvf:
+            outvals = ["Line, Ploss, Qloss\n"]
+            for pair in list(self.linePowerLosses.keys()):
+                realpower = np.real(self.linePowerLosses[pair])
+                imagpower = np.imag(self.linePowerLosses[pair])
+                print(f"Power on line {pair[0] + 1}, {pair[1] + 1}:\tP= {realpower:.5f}, Q= {imagpower:.5f}")
+                outvals.append(f"({pair[0] + 1} : {pair[1] + 1}), {realpower}, {imagpower}\n")
+            csvf.writelines(outvals)
+
     def print_line_currents(self):
         if not self.converge:
             return
 
-        for pair in list(self.lineCurrents.keys()):
-            abs_current = np.abs(self.lineCurrents[pair])
-            phase_current = np.rad2deg(np.angle(self.lineCurrents[pair]))
-            print(f"Current from {pair[0] + 1} -> {pair[1] + 1}:\t{abs_current:.3f} ∠ {phase_current:.3f}[pu]")
+        with open("current.csv", "w+") as csvf:
+            outvals = ["Line start, Line end, Current, Angle\n"]
+            for pair in list(self.lineCurrents.keys()):
+                abs_current = np.abs(self.lineCurrents[pair])
+                phase_current = np.rad2deg(np.angle(self.lineCurrents[pair]))
+                print(f"Current from {pair[0] + 1} -> {pair[1] + 1}:\t{abs_current:.5f} ∠ {phase_current:.5f}[pu]")
+                outvals.append(f"{pair[0] + 1}, {pair[1] + 1}, {abs_current}, {phase_current}\n")
+            csvf.writelines(outvals)
+
+    def check_power_flow_direction(self):
+        correct = True
+        for i in range(self.nbus):
+            for j in range(self.nbus):
+                if self.currentFlowDirection[i, j] == 1:
+                    correct = correct and (self.delta_degrees[i] > self.delta_degrees[j])
+                elif self.currentFlowDirection[i, j] == -1:
+                    correct = correct and (self.delta_degrees[j] > self.delta_degrees[i])
+                else:
+                    continue
+        return correct
+
+    def print_other_stuff(self):
+        if not self.converge:
+            return
+        with open("others.csv", "w+") as csvf:
+            outvals = ["Bus number, Current to gnd, angle, capacitor_losses\n"]
+            for i in range(int(self.nbus)):
+                abs_current = np.abs(self.current_to_gnd[i])
+                phase_current = np.rad2deg(np.angle(self.current_to_gnd[i]))
+                outvals.append(f"{i + 1}, {abs_current}, {phase_current}, {self.capacitor_losses[i]}\n")
+            csvf.writelines(outvals)
