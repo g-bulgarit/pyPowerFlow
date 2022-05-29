@@ -93,12 +93,12 @@ line_params = np.asarray(
 
 if __name__ == '__main__':
     base_power_reference = 100  # MVA
-    accuracy = 1e-4  # delta
+    accuracy = 1e-8  # delta
     max_iterations = 400
 
     # Get solved PF network:
     pf = PowerFlowNetwork(bus_params, line_params, base_power_reference, accuracy, max_iterations,
-                          mode="gauss", policy="tap_changer")
+                          mode="newton", policy="tap_changer")
     pf.export_bus_data(printout=True)
 
     # Plot stuff
